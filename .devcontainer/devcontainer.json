@@ -1,0 +1,62 @@
+{
+    "name": "GoodGame",
+    "dockerComposeFile": "../docker-compose.yml",
+    "service": "django",
+    "workspaceFolder": "/app",
+
+    // Features to install in the container
+    "features": {},
+
+    // Configure tool-specific properties
+    "customizations": {
+        "vscode": {
+            // Extensions to install in the container
+            "extensions": [
+                "ms-python.python",
+                "charliermarsh.ruff",
+                "astral-sh.ty",
+                "ms-azuretools.vscode-docker",
+                "Anthropic.claude-code"
+            ],
+            // VSCode settings
+            "settings": {
+                "python.defaultInterpreterPath": "/app/.venv/bin/python",
+                "python.languageServer": "None",
+                "[python]": {
+                    "editor.defaultFormatter": "charliermarsh.ruff",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.organizeImports": "explicit",
+                        "source.fixAll": "explicit"
+                    }
+                },
+                "ruff.enable": true,
+                "ruff.lint.enable": true,
+                "ruff.format.enable": true
+            }
+        }
+    },
+
+    // Use 'forwardPorts' to make a list of ports inside the container available locally
+    "forwardPorts": [8000],
+
+    // Port labels for better UI
+    "portsAttributes": {
+        "8000": {
+            "label": "Django Server",
+            "onAutoForward": "notify"
+        }
+    },
+
+    // Post-create command to create venv, install dependencies, and run migrations
+    "postCreateCommand": "uv venv /app/.venv --clear && uv pip install --python /app/.venv/bin/python -r requirements.txt && /app/.venv/bin/python manage.py migrate",
+
+    // Automatically open terminal in container on start
+    "postStartCommand": "echo 'Django container ready'",
+
+    // Keep terminal open after attach
+    "postAttachCommand": "bash",
+
+    // Keep container running for better experience
+    "shutdownAction": "stopCompose"
+}
