@@ -1,0 +1,20 @@
+services:
+  django:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.django.dev
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=1
+    command: python manage.py runserver 0.0.0.0:8000
+    networks:
+      - goodgame-network
+
+networks:
+  goodgame-network:
+    driver: bridge
