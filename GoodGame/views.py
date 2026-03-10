@@ -1,6 +1,7 @@
 from ninja import Router
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
+from django.conf import settings
 
 from .schemas import AuthUserOut, ErrorOut, LoginIn, MessageOut, SignupIn, SignupOut
 
@@ -27,6 +28,10 @@ def login(request, data: LoginIn):
         return 401, {"error": "Invalid username or password"}
 
     auth_login(request, user)
+    if data.remember_me:
+        request.session.set_expiry(settings.PERSISTENT_LOGIN_AGE_SECONDS)
+    else:
+        request.session.set_expiry(0)
     return 200, user
 
 

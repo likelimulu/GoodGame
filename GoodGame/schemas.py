@@ -15,6 +15,7 @@ class SignupOut(Schema):
 class LoginIn(Schema):
     username: str
     password: str
+    remember_me: bool = False
 
 
 class AuthUserOut(Schema):
