@@ -1,44 +1,16 @@
-# Virtual environment
-venv/
-env/
-ENV/
-.venv
-
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
-.coverage
-htmlcov/
-.ruff_cache/
+*.py[cod]
+*.egg-info/
+.venv/
 
-# Django
-db.sqlite3
-db.sqlite3-journal
-*.log
-local_settings.py
-media/
-staticfiles/
-static_root/
-
-# Environment variables
+# Env / tooling
 .env
-.env.local
-.env.*.local
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Local conda env created by assistants/tools
+conda-env/
 
-# macOS
+# OS
 .DS_Store
 
 # Docker
