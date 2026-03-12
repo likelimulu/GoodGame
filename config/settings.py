@@ -113,6 +113,9 @@ USE_I18N = True
 
 USE_TZ = True
 
+# Persistent login duration when user opts in to "remember me" (30 days).
+PERSISTENT_LOGIN_AGE_SECONDS = 60 * 60 * 24 * 30
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
