@@ -16,10 +16,10 @@ services:
 
   api:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.django.dev
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.django.dev
     volumes:
-      - .:/app
+      - ./backend:/app
     ports:
       - "8000:8000"
     environment:
