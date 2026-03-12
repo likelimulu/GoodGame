@@ -43,3 +43,7 @@ static_root/
 
 # Docker
 docker-compose.override.yml
+
+# React / Node
+node_modules/
+dist/
