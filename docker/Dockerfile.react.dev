@@ -1,0 +1,18 @@
+FROM node:25.8-alpine3.23
+
+# Install git and GitHub CLI
+RUN apk add --no-cache git curl && \
+    apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community github-cli && \
+    apk add --no-cache gcompat
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev", "--", "--host"]

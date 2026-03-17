@@ -1,0 +1,59 @@
+{
+    "name": "GoodGame React",
+    "dockerComposeFile": "../../docker-compose.yml",
+    "service": "frontend",
+    "workspaceFolder": "/app",
+
+    // Features to install in the container
+    "features": {},
+
+    // Configure tool-specific properties
+    "customizations": {
+        "vscode": {
+            // Extensions to install in the container
+            "extensions": [
+                "Anthropic.claude-code",
+                "dbaeumer.vscode-eslint",
+                "esbenp.prettier-vscode"
+            ],
+            // VSCode settings
+            "settings": {
+                "editor.defaultFormatter": "esbenp.prettier-vscode",
+                "editor.formatOnSave": true,
+                "[typescript]": {
+                    "editor.defaultFormatter": "esbenp.prettier-vscode",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll.eslint": "explicit"
+                    }
+                },
+                "[typescriptreact]": {
+                    "editor.defaultFormatter": "esbenp.prettier-vscode",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll.eslint": "explicit"
+                    }
+                },
+                "eslint.enable": true,
+                "eslint.validate": ["typescript", "typescriptreact"]
+            }
+        }
+    },
+
+    // Use 'forwardPorts' to make a list of ports inside the container available locally
+    "forwardPorts": [5173],
+
+    // Port labels for better UI
+    "portsAttributes": {
+        "5173": {
+            "label": "React Dev Server",
+            "onAutoForward": "openBrowser"
+        }
+    },
+
+    // Start dev server every time the container starts
+    "postStartCommand": "npm run dev -- --host",
+
+    // Keep container running for better experience
+    "shutdownAction": "stopCompose"
+}

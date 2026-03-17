@@ -1,148 +1,135 @@
 # Docker Setup
 
-This directory contains Docker configuration for the GoodGame Django application.
-
 ## Overview
 
-The Docker setup consists of three key files that work together:
-
-1. **[Dockerfile.django.dev](Dockerfile.django.dev)** - Defines the Django development container image
-   - Based on Python 3.14 slim image
-   - Installs development tools: `uv` (package manager), `ty` (type checker), `ruff` (linter/formatter), `git`, and `gh` (GitHub CLI)
-   - Sets up the `/app` working directory
-   - Installs Python dependencies from `requirements.txt`
-   - Exposes port 8000 and runs Django development server
-
-2. **[docker-compose.yml](../docker-compose.yml)** - Orchestrates the container setup
-   - Builds the image using `Dockerfile.django.dev`
-   - Mounts the entire project directory (`.:/app`) for hot reload functionality
-   - Forwards port 8000 to the host
-   - Sets `DEBUG=1` environment variable
-   - Creates a `goodgame-network` bridge network
-
-3. **[.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json)** - VS Code Dev Container configuration
-   - References `docker-compose.yml` to use the same container definition
-   - Installs VS Code extensions: Python, Ruff, Ty, Docker, and Claude Code
-   - Configures Python tools (Ruff as formatter, organize imports on save)
-   - Forwards port 8000 with label "Django Server"
-   - Runs `postCreateCommand` to create a virtual environment at `/app/.venv`, install dependencies, and run migrations
-   - Opens a bash terminal on attach
-
-You can use either:
-- **Standard Docker workflow**: `docker-compose up` (see Quick Start below)
-- **VS Code Dev Containers**: Open in VS Code and select "Reopen in Container"
+| File                       | Description                                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Dockerfile.django.dev`    | Django dev image — Python 3.14 slim, installs `uv`, `ty`, `ruff`, `git`, `gh`; serves on port 8000                                                           |
+| `Dockerfile.react.dev`     | React dev image — Node.js 25.8 Alpine, installs `git`, `curl`, `gh`; runs `npm install` at build time; serves on port 5173                                   |
+| `../docker-compose.yml`    | Orchestrates both containers on `goodgame-network`; `frontend` waits for `api` health check                                                                  |
+| `../.devcontainer/django/` | VS Code Dev Container for backend — attaches to `api`, installs Python/Ruff/Ty/Docker/Claude extensions, auto-runs migrations via `postCreateCommand`        |
+| `../.devcontainer/react/`  | VS Code Dev Container for frontend — attaches to `frontend`, installs ESLint/Prettier/Claude extensions, runs `npm run dev -- --host` via `postStartCommand` |
 
 ## Prerequisites
 
-- Docker
-- Docker Compose
-- (Optional) VS Code with Dev Containers extension for integrated development
+- Docker + Docker Compose
+- (Optional) VS Code with Dev Containers extension
 
 ## Quick Start
 
 ```bash
-# Build and start the containers
 docker-compose up --build
 
-# Access the application at http://localhost:8000
+# Frontend:     http://localhost:5173
+# Django API:   http://localhost:8000/api
+# Django Admin: http://localhost:8000/admin
 ```
+
+The frontend waits for the Django API health check before starting.
 
 ## First Time Setup
 
 ```bash
-# 1. Build and start containers
+# 1. Build and start
 docker-compose up --build
 
-# 2. In a new terminal, run migrations
-docker-compose exec django python manage.py migrate
+# 2. Run migrations
+docker-compose exec api python manage.py migrate
 
 # 3. Create a superuser (optional)
-docker-compose exec django python manage.py createsuperuser
-
-# 4. Access the application
-# - API: http://localhost:8000/api
-# - Admin: http://localhost:8000/admin
+docker-compose exec api python manage.py createsuperuser
 ```
+
+> When using VS Code Dev Containers, the Django `postCreateCommand` runs migrations automatically.
+
+## VS Code Dev Containers
+
+Open Command Palette → "Dev Containers: Reopen in Container", then select:
+
+- **GoodGame Django** (`.devcontainer/django/`) — backend work
+- **GoodGame React** (`.devcontainer/react/`) — frontend work
+
+**Dependency changes:** After modifying `requirements.txt` or `package.json`, use Command Palette → "Dev Containers: Rebuild Container" to re-run Dockerfile steps.
 
 ## Common Commands
 
+### Django
+
 ```bash
-# Start containers
-docker-compose up
+docker-compose exec api python manage.py makemigrations
+docker-compose exec api python manage.py migrate
+docker-compose exec api python manage.py shell
+docker-compose exec api python manage.py test
 
-# Start in detached mode (background)
-docker-compose up -d
+docker-compose exec api ty check .
+docker-compose exec api ruff check .
+docker-compose exec api ruff format .
+```
 
-# Stop containers
-docker-compose down
+### React
 
-# View logs
-docker-compose logs -f django
+```bash
+docker-compose exec frontend npm install <package>
+docker-compose exec frontend npm run lint
+docker-compose exec frontend npm run format
+docker-compose exec frontend npm run build
+```
 
-# Run Django commands
-docker-compose exec django python manage.py <command>
+### General
 
-# Examples:
-docker-compose exec django python manage.py makemigrations
-docker-compose exec django python manage.py migrate
-docker-compose exec django python manage.py shell
-
-# Access Django shell
-docker-compose exec django python manage.py shell
-
-# Run tests
-docker-compose exec django python manage.py test
-
-# Type checking with ty
-docker-compose exec django ty check .
-
-# Linting with ruff
-docker-compose exec django ruff check .
-docker-compose exec django ruff format .
+```bash
+docker-compose up              # start
+docker-compose up -d           # start detached
+docker-compose down            # stop
+docker-compose logs -f api
+docker-compose logs -f frontend
 ```
 
 ## Development Workflow
 
-The setup includes hot reload - code changes are automatically reflected without restarting containers.
+Both services support hot reload - no container restart needed for code changes.
 
-1. Make changes to your Python files
-2. Save the file
-3. Django dev server automatically reloads
+- **Django**: dev server watches for Python file changes
+- **React**: Vite HMR updates the browser instantly on save
 
 ## Database
 
-The project uses SQLite for development. The database file (`db.sqlite3`) is persisted on your host machine, so data survives container restarts.
+SQLite (`db.sqlite3`) is used for development and persisted on the host, so data survives container restarts.
 
-## Tools Included
+## Tools
 
-- **uv**: Fast Python package manager
-- **ty**: Type checker
-- **ruff**: Linter and formatter
+| Container | Tools                                                                  |
+| --------- | ---------------------------------------------------------------------- |
+| Django    | `uv` (package manager), `ty` (type checker), `ruff` (linter/formatter) |
+| React     | Node.js 25.8, Vite (HMR), TypeScript, ESLint, Prettier, Tailwind CSS   |
 
 ## Troubleshooting
 
-### Port already in use
+**Port already in use:**
+
 ```bash
-# Stop any process using port 8000
 lsof -ti:8000 | xargs kill -9
+lsof -ti:5173 | xargs kill -9
 ```
 
-### Reset database
+**Frontend stuck waiting for API:** Check API logs - the frontend won't start until the health check passes.
+
 ```bash
-# Stop containers
+docker-compose logs -f api
+```
+
+**Reset database:**
+
+```bash
 docker-compose down
-
-# Delete database file
 rm db.sqlite3
-
-# Start and run migrations
 docker-compose up -d
-docker-compose exec django python manage.py migrate
+docker-compose exec api python manage.py migrate
 ```
 
-### Rebuild from scratch
+**Rebuild from scratch:**
+
 ```bash
-# Remove containers, volumes, and rebuild
 docker-compose down -v
 docker-compose up --build
 ```

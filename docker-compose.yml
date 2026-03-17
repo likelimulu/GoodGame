@@ -1,17 +1,40 @@
 services:
-  django:
+  frontend:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.django.dev
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.react.dev
+    ports:
+      - "5173:5173"
     volumes:
-      # Mount source code for hot reload
-      - .:/app
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - goodgame-network
 
+  api:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.django.dev
+    volumes:
+      - ./backend:/app
     ports:
       - "8000:8000"
     environment:
       - DEBUG=1
     command: python manage.py runserver 0.0.0.0:8000
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8000/admin/login/ > /dev/null || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - goodgame-network
 

@@ -1,7 +1,7 @@
 {
-    "name": "GoodGame",
-    "dockerComposeFile": "../docker-compose.yml",
-    "service": "django",
+    "name": "GoodGame Django",
+    "dockerComposeFile": "../../docker-compose.yml",
+    "service": "api",
     "workspaceFolder": "/app",
 
     // Features to install in the container

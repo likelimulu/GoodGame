@@ -1,5 +1,5 @@
 # Django framework
-Django>=6.0.3
+Django>=4.2,<5.0
 
 # Django Ninja for REST API
 django-ninja>=1.5.3
