@@ -5,6 +5,8 @@ services:
       dockerfile: ../docker/Dockerfile.react.dev
     ports:
       - "5173:5173"
+    environment:
+      - VITE_API_TARGET=http://api:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules
