@@ -4,6 +4,8 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from django.test import TestCase
 
+from .models import GameHub, Post, Tag
+
 
 class AuthSessionApiTests(TestCase):
     def setUp(self):
@@ -77,3 +79,283 @@ class AuthSessionApiTests(TestCase):
 
         me_response = self.client.get("/api/auth/me")
         self.assertEqual(me_response.status_code, 401)
+
+
+class SignupApiTests(TestCase):
+    def test_signup_creates_user(self):
+        response = self.client.post(
+            "/api/signup",
+            data=json.dumps({
+                "username": "newplayer",
+                "password": "strong-pass-456",
+                "email": "newplayer@example.com",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["username"], "newplayer")
+        self.assertTrue(User.objects.filter(username="newplayer").exists())
+
+    def test_signup_duplicate_username(self):
+        User.objects.create_user(username="taken", password="pass", email="a@b.com")
+        response = self.client.post(
+            "/api/signup",
+            data=json.dumps({
+                "username": "taken",
+                "password": "another-pass",
+                "email": "c@d.com",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 409)
+
+
+class GameHubApiTests(TestCase):
+    def setUp(self):
+        GameHub.objects.create(name="Valorant Hub", slug="valorant-hub")
+        GameHub.objects.create(name="Minecraft Hub", slug="minecraft-hub")
+
+    def test_list_gamehubs(self):
+        response = self.client.get("/api/gamehubs")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 2)
+        names = {h["name"] for h in data}
+        self.assertIn("Valorant Hub", names)
+        self.assertIn("Minecraft Hub", names)
+
+
+class PostApiTests(TestCase):
+    """Tests for the Post CRUD API (GG-52)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="poster", password="pass-123", email="poster@example.com"
+        )
+        self.other_user = User.objects.create_user(
+            username="other", password="pass-456", email="other@example.com"
+        )
+        self.hub = GameHub.objects.create(name="Valorant Hub", slug="valorant-hub")
+
+    def _login(self, username="poster", password="pass-123"):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    # ── Create ────────────────────────────────────────────────
+
+    def test_create_post_published(self):
+        self._login()
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({
+                "game_hub_id": self.hub.id,
+                "title": "Best Valorant settings",
+                "body": "Here are my recommended settings...",
+                "tags": ["Strategy", "Ranked"],
+                "is_question": False,
+                "has_spoilers": False,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["title"], "Best Valorant settings")
+        self.assertEqual(body["status"], "published")
+        self.assertEqual(body["author"]["username"], "poster")
+        self.assertEqual(len(body["tags"]), 2)
+
+    def test_create_post_as_draft(self):
+        self._login()
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({
+                "game_hub_id": self.hub.id,
+                "title": "Draft post",
+                "body": "WIP...",
+                "status": "draft",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["status"], "draft")
+
+    def test_create_post_requires_auth(self):
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({
+                "game_hub_id": self.hub.id,
+                "title": "No auth",
+                "body": "...",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_create_post_invalid_hub(self):
+        self._login()
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({
+                "game_hub_id": 9999,
+                "title": "Bad hub",
+                "body": "...",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_post_max_five_tags(self):
+        self._login()
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({
+                "game_hub_id": self.hub.id,
+                "title": "Tag limit test",
+                "body": "...",
+                "tags": ["A", "B", "C", "D", "E", "F", "G"],
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.json()["tags"]), 5)
+
+    # ── List / Get ────────────────────────────────────────────
+
+    def test_list_posts_returns_published_only(self):
+        self._login()
+        # Create one published, one draft
+        self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Pub", "body": "x"}),
+            content_type="application/json",
+        )
+        self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Drft", "body": "x", "status": "draft"}),
+            content_type="application/json",
+        )
+
+        response = self.client.get("/api/posts")
+        self.assertEqual(response.status_code, 200)
+        titles = [p["title"] for p in response.json()]
+        self.assertIn("Pub", titles)
+        self.assertNotIn("Drft", titles)
+
+    def test_list_posts_filter_by_hub(self):
+        hub2 = GameHub.objects.create(name="Minecraft Hub", slug="minecraft-hub")
+        self._login()
+        self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Val post", "body": "x"}),
+            content_type="application/json",
+        )
+        self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": hub2.id, "title": "MC post", "body": "x"}),
+            content_type="application/json",
+        )
+
+        response = self.client.get(f"/api/posts?game_hub_id={self.hub.id}")
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["title"], "Val post")
+
+    def test_get_single_post(self):
+        self._login()
+        create_resp = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Solo", "body": "Details"}),
+            content_type="application/json",
+        )
+        post_id = create_resp.json()["id"]
+
+        response = self.client.get(f"/api/posts/{post_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["title"], "Solo")
+
+    def test_get_deleted_post_returns_404(self):
+        self._login()
+        create_resp = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "ToDelete", "body": "x"}),
+            content_type="application/json",
+        )
+        post_id = create_resp.json()["id"]
+        self.client.delete(f"/api/posts/{post_id}")
+
+        response = self.client.get(f"/api/posts/{post_id}")
+        self.assertEqual(response.status_code, 404)
+
+    # ── Update ────────────────────────────────────────────────
+
+    def test_update_post(self):
+        self._login()
+        create_resp = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Original", "body": "old"}),
+            content_type="application/json",
+        )
+        post_id = create_resp.json()["id"]
+
+        response = self.client.put(
+            f"/api/posts/{post_id}",
+            data=json.dumps({"title": "Updated", "tags": ["Patch"]}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["title"], "Updated")
+        self.assertTrue(body["is_edited"])
+        self.assertEqual(len(body["tags"]), 1)
+
+    def test_update_post_forbidden_for_other_user(self):
+        self._login()
+        create_resp = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Mine", "body": "x"}),
+            content_type="application/json",
+        )
+        post_id = create_resp.json()["id"]
+
+        # Login as another user
+        self._login(username="other", password="pass-456")
+        response = self.client.put(
+            f"/api/posts/{post_id}",
+            data=json.dumps({"title": "Hacked"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    # ── Delete ────────────────────────────────────────────────
+
+    def test_delete_post_soft_deletes(self):
+        self._login()
+        create_resp = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Bye", "body": "x"}),
+            content_type="application/json",
+        )
+        post_id = create_resp.json()["id"]
+
+        response = self.client.delete(f"/api/posts/{post_id}")
+        self.assertEqual(response.status_code, 200)
+
+        # Still exists in DB but with deleted status
+        post = Post.objects.get(id=post_id)
+        self.assertEqual(post.status, Post.Status.DELETED)
+
+    def test_delete_post_forbidden_for_other_user(self):
+        self._login()
+        create_resp = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Protected", "body": "x"}),
+            content_type="application/json",
+        )
+        post_id = create_resp.json()["id"]
+
+        self._login(username="other", password="pass-456")
+        response = self.client.delete(f"/api/posts/{post_id}")
+        self.assertEqual(response.status_code, 403)

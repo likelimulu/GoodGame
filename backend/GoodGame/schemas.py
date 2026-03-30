@@ -1,4 +1,10 @@
+from datetime import datetime
+from typing import List, Optional
+
 from ninja import Schema
+
+
+# ── Auth schemas ──────────────────────────────────────────────
 
 
 class SignupIn(Schema):
@@ -30,3 +36,62 @@ class ErrorOut(Schema):
 
 class MessageOut(Schema):
     message: str
+
+
+# ── GameHub schemas ───────────────────────────────────────────
+
+
+class GameHubOut(Schema):
+    id: int
+    name: str
+    slug: str
+
+
+# ── Tag schemas ───────────────────────────────────────────────
+
+
+class TagOut(Schema):
+    id: int
+    name: str
+
+
+# ── Post schemas ──────────────────────────────────────────────
+
+
+class PostIn(Schema):
+    game_hub_id: int
+    title: str
+    body: str
+    tags: List[str] = []
+    is_question: bool = False
+    has_spoilers: bool = False
+    status: str = "published"  # "published" or "draft"
+
+
+class PostUpdateIn(Schema):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    tags: Optional[List[str]] = None
+    is_question: Optional[bool] = None
+    has_spoilers: Optional[bool] = None
+    status: Optional[str] = None
+
+
+class PostAuthorOut(Schema):
+    id: int
+    username: str
+
+
+class PostOut(Schema):
+    id: int
+    game_hub: GameHubOut
+    author: PostAuthorOut
+    title: str
+    body: str
+    tags: List[TagOut]
+    is_question: bool
+    has_spoilers: bool
+    status: str
+    is_edited: bool
+    created_at: datetime
+    updated_at: datetime

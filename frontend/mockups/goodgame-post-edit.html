@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GoodGame Post Modification</title>
+    <link rel="stylesheet" href="./goodgame-garage.css" />
+    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+    <script src="./goodgame-post-tags.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <h1 class="brand"><a class="brand-link" href="/goodgame-login.html">GoodGame</a></h1>
+        <nav class="nav">
+          <span>Game Hubs</span>
+          <span>Patch Feed</span>
+          <a class="active" href="/goodgame-post-edit.html">Post Studio</a>
+          <a href="/goodgame-login.html">Account</a>
+        </nav>
+      </header>
+
+      <main class="page-grid">
+        <section class="hero-card">
+          <span class="eyebrow">Arcade Garage</span>
+          <h1 class="headline">Edit Post</h1>
+          <p class="subhead">Update an existing thread with the same clean form used for creation.</p>
+        </section>
+
+        <section class="form-card">
+          <p class="panel-tag">Post Studio</p>
+          <h2 class="section-title">Edit Existing Post</h2>
+          <p class="helper">The form is prefilled so you can update and republish or save a draft.</p>
+
+          <form class="form-fields" action="/goodgame-post-edit.html">
+            <div class="field">
+              <label for="post-edit-forum">Forum</label>
+              <select id="post-edit-forum" name="forum" required>
+                <option>Valorant Hub</option>
+                <option selected>Minecraft Hub</option>
+                <option>League of Legends Hub</option>
+                <option>Elden Ring Hub</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="post-edit-title">Post Title</label>
+              <input id="post-edit-title" name="title" type="text" value="Need feedback on our new survival server rules after the latest update" required />
+            </div>
+
+            <div class="field">
+              <label for="post-edit-body">Post Body</label>
+              <textarea id="post-edit-body" name="body" required>We changed progression pacing after the last patch and a few players are hitting the midgame wall too early. I updated the rule summary and added the new ore respawn timing. Looking for feedback before we lock the next round of changes.</textarea>
+            </div>
+
+            <div class="field">
+              <div class="field-head">
+                <label for="post-edit-tag-input">Tags</label>
+                <p class="field-hint">Update the tags if the thread focus changes.</p>
+              </div>
+              <div class="tag-editor" data-tag-editor>
+                <div class="tag-input-row">
+                  <input
+                    id="post-edit-tag-input"
+                    class="tag-input"
+                    type="text"
+                    placeholder="Add a tag like ServerRules"
+                    maxlength="20"
+                    data-tag-input
+                  />
+                  <button class="tag-add" type="button" data-tag-add>Add Tag</button>
+                </div>
+                <div class="tag-row" data-tag-list>
+                  <button class="tag removable" type="button" data-tag-value="ServerRules">
+                    <span>#ServerRules</span>
+                    <span class="tag-remove" aria-hidden="true">x</span>
+                  </button>
+                  <button class="tag removable" type="button" data-tag-value="PatchReaction">
+                    <span>#PatchReaction</span>
+                    <span class="tag-remove" aria-hidden="true">x</span>
+                  </button>
+                  <button class="tag removable" type="button" data-tag-value="Feedback">
+                    <span>#Feedback</span>
+                    <span class="tag-remove" aria-hidden="true">x</span>
+                  </button>
+                </div>
+                <input type="hidden" name="tags" value="ServerRules,PatchReaction,Feedback" data-tag-hidden />
+              </div>
+            </div>
+
+            <div class="check-grid">
+              <label class="check">
+                <input name="is_question" type="checkbox" checked />
+                <span>Keep this post marked as a question.</span>
+              </label>
+              <label class="check">
+                <input name="contains_spoilers" type="checkbox" />
+                <span>This post contains spoilers.</span>
+              </label>
+            </div>
+
+            <div class="meta-row">
+              <div class="action-row">
+                <button class="btn primary" type="submit" name="status" value="published">Save Changes</button>
+                <button class="btn secondary" type="submit" name="status" value="draft" formaction="/goodgame-post-edit.html" formnovalidate>Save Draft</button>
+                <button class="btn ghost" type="submit" formaction="/goodgame-post-create.html" formnovalidate>Discard</button>
+              </div>
+              <a class="danger-link" href="/goodgame-post-create.html">Delete Post</a>
+            </div>
+          </form>
+
+          <p class="inline-copy"><a class="text-link" href="/goodgame-post-create.html">Switch to post creation</a>.</p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
