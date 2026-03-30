@@ -95,3 +95,10 @@ class PostOut(Schema):
     is_edited: bool
     created_at: datetime
     updated_at: datetime
+
+
+# ── User profile schemas ───────────────────────────────────────────────────────
+
+
+class AvatarOut(Schema):
+    url: str

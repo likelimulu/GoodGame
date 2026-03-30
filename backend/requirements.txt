@@ -7,8 +7,20 @@ django-ninja>=1.5.3
 # CORS headers for frontend integration
 django-cors-headers>=4.9.0
 
-# # Environment variables
-# python-decouple==3.8
+# Environment variables
+python-decouple>=3.8
+
+# Production database
+psycopg[binary]>=3.1
+
+# Production WSGI server
+gunicorn>=21.2
+
+# Azure Blob Storage backend for media files
+django-storages[azure]>=1.14
+
+# Image processing (required by ImageField)
+Pillow>=10.0
 
 # Testing
 pytest>=9.0.2
