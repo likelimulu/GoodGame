@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from django.test import TestCase
 
-from .models import GameHub, Post, Tag
+from .models import GameHub, Post, PostVote, Tag
 
 
 class AuthSessionApiTests(TestCase):
@@ -359,3 +359,127 @@ class PostApiTests(TestCase):
         self._login(username="other", password="pass-456")
         response = self.client.delete(f"/api/posts/{post_id}")
         self.assertEqual(response.status_code, 403)
+
+
+class PostVoteApiTests(TestCase):
+    def setUp(self):
+        self.author = User.objects.create_user(
+            username="author", password="pass-123", email="author@example.com"
+        )
+        self.voter = User.objects.create_user(
+            username="voter", password="pass-456", email="voter@example.com"
+        )
+        self.other_voter = User.objects.create_user(
+            username="other-voter", password="pass-789", email="other@example.com"
+        )
+        self.hub = GameHub.objects.create(name="Helldivers Hub", slug="helldivers-hub")
+        self.post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Patch notes reaction",
+            body="Balance changes are wild.",
+            status=Post.Status.PUBLISHED,
+        )
+
+    def _login(self, username="voter", password="pass-456"):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    def test_vote_requires_authentication(self):
+        response = self.client.put(
+            f"/api/posts/{self.post.id}/vote",
+            data=json.dumps({"value": 1}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_upvote_returns_updated_summary(self):
+        self._login()
+        response = self.client.put(
+            f"/api/posts/{self.post.id}/vote",
+            data=json.dumps({"value": 1}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["vote_score"], 1)
+        self.assertEqual(response.json()["upvote_count"], 1)
+        self.assertEqual(response.json()["downvote_count"], 0)
+        self.assertEqual(response.json()["current_user_vote"], 1)
+        self.assertTrue(
+            PostVote.objects.filter(post=self.post, user=self.voter, value=1).exists()
+        )
+
+    def test_clearing_vote_sets_score_back_to_zero(self):
+        PostVote.objects.create(post=self.post, user=self.voter, value=1)
+
+        self._login()
+        response = self.client.put(
+            f"/api/posts/{self.post.id}/vote",
+            data=json.dumps({"value": 0}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["vote_score"], 0)
+        self.assertEqual(response.json()["current_user_vote"], 0)
+        self.assertFalse(PostVote.objects.filter(post=self.post, user=self.voter).exists())
+
+    def test_switching_vote_replaces_existing_vote(self):
+        PostVote.objects.create(post=self.post, user=self.voter, value=1)
+
+        self._login()
+        response = self.client.put(
+            f"/api/posts/{self.post.id}/vote",
+            data=json.dumps({"value": -1}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["vote_score"], -1)
+        self.assertEqual(response.json()["upvote_count"], 0)
+        self.assertEqual(response.json()["downvote_count"], 1)
+        self.assertEqual(response.json()["current_user_vote"], -1)
+        self.assertEqual(
+            PostVote.objects.get(post=self.post, user=self.voter).value,
+            -1,
+        )
+
+    def test_post_endpoints_include_vote_summary(self):
+        PostVote.objects.create(post=self.post, user=self.voter, value=1)
+        PostVote.objects.create(post=self.post, user=self.other_voter, value=-1)
+
+        self._login()
+        detail_response = self.client.get(f"/api/posts/{self.post.id}")
+        list_response = self.client.get("/api/posts")
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["vote_score"], 0)
+        self.assertEqual(detail_response.json()["current_user_vote"], 1)
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()[0]["vote_score"], 0)
+        self.assertEqual(list_response.json()[0]["upvote_count"], 1)
+        self.assertEqual(list_response.json()[0]["downvote_count"], 1)
+        self.assertEqual(list_response.json()[0]["current_user_vote"], 1)
+
+    def test_cannot_vote_on_non_published_post(self):
+        draft_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Draft",
+            body="Still editing",
+            status=Post.Status.DRAFT,
+        )
+        self._login()
+
+        response = self.client.put(
+            f"/api/posts/{draft_post.id}/vote",
+            data=json.dumps({"value": 1}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)

@@ -35,8 +35,19 @@ export interface Post {
   is_edited: boolean;
   created_at: string;
   updated_at: string;
+  vote_score: number;
+  upvote_count: number;
+  downvote_count: number;
+  current_user_vote: number;
 }
 
 export interface ApiError {
   error: string;
+}
+
+export interface PostVoteSummary {
+  vote_score: number;
+  upvote_count: number;
+  downvote_count: number;
+  current_user_vote: number;
 }

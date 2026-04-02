@@ -4,9 +4,11 @@ from ninja import Router
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.db.models import Count, IntegerField, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 
-from .models import GameHub, Post, Tag
+from .models import GameHub, Post, PostVote, Tag
 from .schemas import (
     AuthUserOut,
     ErrorOut,
@@ -15,6 +17,8 @@ from .schemas import (
     MessageOut,
     PostIn,
     PostOut,
+    PostVoteIn,
+    PostVoteSummaryOut,
     PostUpdateIn,
     SignupIn,
     SignupOut,
@@ -88,6 +92,42 @@ def _get_or_create_tags(tag_names: List[str]) -> List[Tag]:
     return tags
 
 
+def _posts_with_related_data():
+    return Post.objects.select_related("game_hub", "author").prefetch_related("tags")
+
+
+def _annotate_vote_summary(queryset):
+    return queryset.annotate(
+        vote_score=Coalesce(
+            Sum("votes__value"),
+            Value(0),
+            output_field=IntegerField(),
+        ),
+        upvote_count=Count("votes", filter=Q(votes__value=PostVote.Value.UPVOTE)),
+        downvote_count=Count("votes", filter=Q(votes__value=PostVote.Value.DOWNVOTE)),
+    )
+
+
+def _attach_current_user_vote(posts, user):
+    posts = list(posts)
+    vote_map = {}
+    if user.is_authenticated and posts:
+        vote_map = dict(
+            PostVote.objects.filter(user=user, post_id__in=[post.id for post in posts])
+            .values_list("post_id", "value")
+        )
+
+    for post in posts:
+        post.current_user_vote = vote_map.get(post.id, 0)
+    return posts
+
+
+def _get_post_with_vote_summary(post_id: int, user):
+    post = get_object_or_404(_annotate_vote_summary(_posts_with_related_data()), id=post_id)
+    _attach_current_user_vote([post], user)
+    return post
+
+
 @router.post("/posts", response={201: PostOut, 401: ErrorOut, 404: ErrorOut})
 def create_post(request, data: PostIn):
     """Create a new post in a game hub."""
@@ -109,26 +149,23 @@ def create_post(request, data: PostIn):
     if data.tags:
         post.tags.set(_get_or_create_tags(data.tags))
 
-    return 201, post
+    return 201, _get_post_with_vote_summary(post.id, request.user)
 
 
 @router.get("/posts", response=List[PostOut])
 def list_posts(request, game_hub_id: int = None, status: str = "published"):
     """List posts, optionally filtered by game hub and status."""
-    qs = Post.objects.select_related("game_hub", "author").prefetch_related("tags")
-    qs = qs.filter(status=status)
+    qs = _annotate_vote_summary(_posts_with_related_data())
+    qs = qs.filter(status=status).order_by("-vote_score", "-created_at")
     if game_hub_id:
         qs = qs.filter(game_hub_id=game_hub_id)
-    return qs
+    return _attach_current_user_vote(qs, request.user)
 
 
 @router.get("/posts/{post_id}", response={200: PostOut, 404: ErrorOut})
 def get_post(request, post_id: int):
     """Retrieve a single post by id."""
-    post = get_object_or_404(
-        Post.objects.select_related("game_hub", "author").prefetch_related("tags"),
-        id=post_id,
-    )
+    post = _get_post_with_vote_summary(post_id, request.user)
     if post.status == Post.Status.DELETED:
         return 404, {"error": "Post not found"}
     return 200, post
@@ -162,9 +199,7 @@ def update_post(request, post_id: int, data: PostUpdateIn):
     if data.tags is not None:
         post.tags.set(_get_or_create_tags(data.tags))
 
-    # Refresh relations for serialization
-    post = Post.objects.select_related("game_hub", "author").prefetch_related("tags").get(id=post.id)
-    return 200, post
+    return 200, _get_post_with_vote_summary(post.id, request.user)
 
 
 @router.delete("/posts/{post_id}", response={200: MessageOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
@@ -181,3 +216,26 @@ def delete_post(request, post_id: int):
     post.status = Post.Status.DELETED
     post.save()
     return 200, {"message": "Post deleted"}
+
+
+@router.put(
+    "/posts/{post_id}/vote",
+    response={200: PostVoteSummaryOut, 401: ErrorOut, 404: ErrorOut},
+)
+def vote_on_post(request, post_id: int, data: PostVoteIn):
+    """Apply or clear a user's vote on a published post."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    post = get_object_or_404(Post, id=post_id, status=Post.Status.PUBLISHED)
+
+    if data.value == 0:
+        PostVote.objects.filter(post=post, user=request.user).delete()
+    else:
+        PostVote.objects.update_or_create(
+            post=post,
+            user=request.user,
+            defaults={"value": data.value},
+        )
+
+    return 200, _get_post_with_vote_summary(post.id, request.user)
