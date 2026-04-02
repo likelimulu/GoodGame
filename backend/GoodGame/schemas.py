@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from ninja import Schema
 
@@ -82,6 +82,13 @@ class PostAuthorOut(Schema):
     username: str
 
 
+class PostVoteSummaryOut(Schema):
+    vote_score: int
+    upvote_count: int
+    downvote_count: int
+    current_user_vote: int = 0
+
+
 class PostOut(Schema):
     id: int
     game_hub: GameHubOut
@@ -95,3 +102,11 @@ class PostOut(Schema):
     is_edited: bool
     created_at: datetime
     updated_at: datetime
+    vote_score: int
+    upvote_count: int
+    downvote_count: int
+    current_user_vote: int = 0
+
+
+class PostVoteIn(Schema):
+    value: Literal[-1, 0, 1]

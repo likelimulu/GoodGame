@@ -70,7 +70,7 @@ export default function EditPostPage() {
     if (!confirm("Delete this post? This cannot be undone.")) return;
     const { status } = await api.delete<unknown>(`/posts/${postId}`);
     if (status === 200) {
-      navigate("/posts/create");
+      navigate("/posts");
     }
   }
 
@@ -216,8 +216,8 @@ export default function EditPostPage() {
           </form>
 
           <p className="inline-copy">
-            <Link className="text-link" to="/posts/create">
-              Switch to post creation
+            <Link className="text-link" to="/posts">
+              Back to feed
             </Link>
             .
           </p>
