@@ -21,6 +21,14 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/posts" element={<PostsFeedPage />} />
+          <Route
+            path="/posts/mine"
+            element={
+              <RequireAuth>
+                <PostsFeedPage mineOnly />
+              </RequireAuth>
+            }
+          />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route

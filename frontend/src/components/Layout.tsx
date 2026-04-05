@@ -1,11 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "../context/useAuth";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
+  const { user } = useAuth();
   const isAccount = pathname === "/login" || pathname === "/signup";
   const isFeed = pathname === "/posts";
+  const isMyPosts = pathname === "/posts/mine";
   const isPostStudio =
-    pathname === "/posts/create" || pathname.startsWith("/posts/");
+    pathname === "/posts/create" || pathname.startsWith("/posts/") && pathname !== "/posts" && pathname !== "/posts/mine";
 
   return (
     <div className="app-shell">
@@ -20,6 +23,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Link className={isFeed ? "active" : ""} to="/posts">
             Patch Feed
           </Link>
+          {user && (
+            <Link className={isMyPosts ? "active" : ""} to="/posts/mine">
+              My Posts
+            </Link>
+          )}
           <Link
             className={isPostStudio ? "active" : ""}
             to="/posts/create"

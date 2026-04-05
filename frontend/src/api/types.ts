@@ -45,6 +45,10 @@ export interface ApiError {
   error: string;
 }
 
+export interface ApiMessage {
+  message: string;
+}
+
 export interface PostVoteSummary {
   vote_score: number;
   upvote_count: number;

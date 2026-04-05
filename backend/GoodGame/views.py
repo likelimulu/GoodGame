@@ -152,14 +152,21 @@ def create_post(request, data: PostIn):
     return 201, _get_post_with_vote_summary(post.id, request.user)
 
 
-@router.get("/posts", response=List[PostOut])
-def list_posts(request, game_hub_id: int = None, status: str = "published"):
-    """List posts, optionally filtered by game hub and status."""
+@router.get("/posts", response={200: List[PostOut], 401: ErrorOut})
+def list_posts(request, game_hub_id: int = None, status: str = "published", mine: bool = False):
+    """List public posts or the authenticated user's own posts."""
     qs = _annotate_vote_summary(_posts_with_related_data())
-    qs = qs.filter(status=status).order_by("-vote_score", "-created_at")
+
+    if mine:
+        if not request.user.is_authenticated:
+            return 401, {"error": "Authentication required"}
+        qs = qs.filter(author=request.user).exclude(status=Post.Status.DELETED).order_by("-updated_at")
+    else:
+        qs = qs.filter(status=status).order_by("-vote_score", "-created_at")
+
     if game_hub_id:
         qs = qs.filter(game_hub_id=game_hub_id)
-    return _attach_current_user_vote(qs, request.user)
+    return 200, _attach_current_user_vote(qs, request.user)
 
 
 @router.get("/posts/{post_id}", response={200: PostOut, 404: ErrorOut})
@@ -182,6 +189,8 @@ def update_post(request, post_id: int, data: PostUpdateIn):
     if post.author_id != request.user.id:
         return 403, {"error": "You can only edit your own posts"}
 
+    if data.game_hub_id is not None:
+        post.game_hub = get_object_or_404(GameHub, id=data.game_hub_id)
     if data.title is not None:
         post.title = data.title
     if data.body is not None:

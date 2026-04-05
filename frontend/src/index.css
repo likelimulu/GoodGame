@@ -382,6 +382,19 @@
     color: var(--color-gg-red-deep);
   }
 
+  .action-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .action-link:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
+
   .tag-row {
     display: flex;
     flex-wrap: wrap;

@@ -263,6 +263,49 @@ class PostApiTests(TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["title"], "Val post")
 
+    def test_list_my_posts_requires_auth(self):
+        response = self.client.get("/api/posts?mine=true")
+        self.assertEqual(response.status_code, 401)
+
+    def test_list_my_posts_returns_owned_posts_including_drafts(self):
+        self._login()
+        own_published = Post.objects.create(
+            game_hub=self.hub,
+            author=self.user,
+            title="Own published",
+            body="visible",
+            status=Post.Status.PUBLISHED,
+        )
+        own_draft = Post.objects.create(
+            game_hub=self.hub,
+            author=self.user,
+            title="Own draft",
+            body="draft",
+            status=Post.Status.DRAFT,
+        )
+        Post.objects.create(
+            game_hub=self.hub,
+            author=self.other_user,
+            title="Other post",
+            body="not mine",
+            status=Post.Status.PUBLISHED,
+        )
+        Post.objects.create(
+            game_hub=self.hub,
+            author=self.user,
+            title="Deleted mine",
+            body="gone",
+            status=Post.Status.DELETED,
+        )
+
+        response = self.client.get("/api/posts?mine=true")
+        self.assertEqual(response.status_code, 200)
+        titles = [post["title"] for post in response.json()]
+        self.assertIn(own_published.title, titles)
+        self.assertIn(own_draft.title, titles)
+        self.assertNotIn("Other post", titles)
+        self.assertNotIn("Deleted mine", titles)
+
     def test_get_single_post(self):
         self._login()
         create_resp = self.client.post(
@@ -310,6 +353,24 @@ class PostApiTests(TestCase):
         self.assertEqual(body["title"], "Updated")
         self.assertTrue(body["is_edited"])
         self.assertEqual(len(body["tags"]), 1)
+
+    def test_update_post_can_change_game_hub(self):
+        hub2 = GameHub.objects.create(name="Minecraft Hub", slug="minecraft-hub")
+        self._login()
+        create_resp = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Original", "body": "old"}),
+            content_type="application/json",
+        )
+        post_id = create_resp.json()["id"]
+
+        response = self.client.put(
+            f"/api/posts/{post_id}",
+            data=json.dumps({"game_hub_id": hub2.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["game_hub"]["id"], hub2.id)
 
     def test_update_post_forbidden_for_other_user(self):
         self._login()

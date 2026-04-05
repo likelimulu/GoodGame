@@ -60,7 +60,7 @@ export default function CreatePostPage() {
     setSubmitting(false);
 
     if (resStatus === 201) {
-      navigate(`/posts/${(data as Post).id}/edit`);
+      navigate("/posts/mine");
     } else {
       setError((data as ApiError).error ?? "Failed to create post");
     }

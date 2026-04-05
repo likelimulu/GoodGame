@@ -69,6 +69,7 @@ class PostIn(Schema):
 
 
 class PostUpdateIn(Schema):
+    game_hub_id: Optional[int] = None
     title: Optional[str] = None
     body: Optional[str] = None
     tags: Optional[List[str]] = None
