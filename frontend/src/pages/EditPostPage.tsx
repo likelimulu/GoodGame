@@ -62,7 +62,7 @@ export default function EditPostPage() {
     setSubmitting(false);
 
     if (resStatus === 200) {
-      navigate("/posts/mine");
+      navigate("/my-posts");
     } else {
       setSubmitError((data as ApiError).error ?? "Failed to save post");
     }
@@ -72,7 +72,7 @@ export default function EditPostPage() {
     if (!confirm("Delete this post? This cannot be undone.")) return;
     const { status } = await api.delete<unknown>(`/posts/${postId}`);
     if (status === 200) {
-      navigate("/posts/mine");
+      navigate("/my-posts");
     }
   }
 
@@ -206,7 +206,7 @@ export default function EditPostPage() {
                 <button
                   className="btn ghost"
                   type="button"
-                  onClick={() => navigate("/posts/mine")}
+                  onClick={() => navigate("/my-posts")}
                 >
                   Discard
                 </button>
@@ -218,7 +218,7 @@ export default function EditPostPage() {
           </form>
 
           <p className="inline-copy">
-            <Link className="text-link" to="/posts/mine">
+            <Link className="text-link" to="/my-posts">
               Back to My Posts
             </Link>
             .

@@ -60,7 +60,7 @@ export default function CreatePostPage() {
     setSubmitting(false);
 
     if (resStatus === 201) {
-      navigate("/posts/mine");
+      navigate("/my-posts");
     } else {
       setError((data as ApiError).error ?? "Failed to create post");
     }

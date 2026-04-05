@@ -175,7 +175,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
             )}
 
             {user && !mineOnly && (
-              <Link className="btn ghost" to="/posts/mine">
+              <Link className="btn ghost" to="/my-posts">
                 Manage My Posts
               </Link>
             )}
@@ -271,7 +271,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                           </button>
                         </>
                       ) : user?.id === post.author.id ? (
-                        <Link className="text-link" to="/posts/mine">
+                        <Link className="text-link" to="/my-posts">
                           Manage in My Posts
                         </Link>
                       ) : (

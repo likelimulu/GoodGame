@@ -22,7 +22,7 @@ function App() {
         <Routes>
           <Route path="/posts" element={<PostsFeedPage />} />
           <Route
-            path="/posts/mine"
+            path="/my-posts"
             element={
               <RequireAuth>
                 <PostsFeedPage mineOnly />

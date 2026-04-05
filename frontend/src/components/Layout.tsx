@@ -6,9 +6,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const isAccount = pathname === "/login" || pathname === "/signup";
   const isFeed = pathname === "/posts";
-  const isMyPosts = pathname === "/posts/mine";
+  const isMyPosts = pathname === "/my-posts";
   const isPostStudio =
-    pathname === "/posts/create" || pathname.startsWith("/posts/") && pathname !== "/posts" && pathname !== "/posts/mine";
+    pathname === "/posts/create" || pathname.startsWith("/posts/") && pathname !== "/posts";
 
   return (
     <div className="app-shell">
@@ -24,7 +24,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             Patch Feed
           </Link>
           {user && (
-            <Link className={isMyPosts ? "active" : ""} to="/posts/mine">
+            <Link className={isMyPosts ? "active" : ""} to="/my-posts">
               My Posts
             </Link>
           )}
