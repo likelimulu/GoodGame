@@ -34,18 +34,6 @@ resource "azurerm_container_app" "django" {
     type = "SystemAssigned"
   }
 
-  # Pull image from ACR using admin credentials stored as secrets
-  registry {
-    server               = azurerm_container_registry.main.login_server
-    username             = azurerm_container_registry.main.admin_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = azurerm_container_registry.main.admin_password
-  }
-
   secret {
     name  = "django-secret-key"
     value = var.django_secret_key
@@ -61,14 +49,17 @@ resource "azurerm_container_app" "django" {
     value = azurerm_storage_account.main.primary_access_key
   }
 
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.main.admin_password
+  }
+
   template {
     container {
       name   = "django-api"
-      image  = "${azurerm_container_registry.main.login_server}/${var.app_name}-api:latest"
-      cpu    = 0.5
-      memory = "1Gi"
-
-      # Run migrations then start gunicorn
+      image   = "${azurerm_container_registry.main.login_server}/${var.app_name}-api:latest"
+      cpu     = 0.5
+      memory  = "1Gi"
       command = ["/bin/sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"]
 
       env {
@@ -119,6 +110,12 @@ resource "azurerm_container_app" "django" {
 
     min_replicas = 0  # scale to zero when idle (saves credits)
     max_replicas = 3
+  }
+
+  registry {
+    server               = azurerm_container_registry.main.login_server
+    username             = azurerm_container_registry.main.admin_username
+    password_secret_name = "acr-password"
   }
 
   ingress {

@@ -8,12 +8,13 @@
 #   export TF_VAR_github_token="..."
 
 app_name    = "goodgame"
-location    = "eastus"
+location    = "centralus"
 environment = "prod"
 
 postgres_admin_username = "goodgameadmin"
 postgres_db_name        = "goodgame"
 postgres_sku            = "B_Standard_B1ms"
+postgres_location       = "centralus"
 
 registry_sku = "Basic"
 

@@ -36,12 +36,3 @@ resource "azurerm_storage_container" "static" {
   container_access_type = "blob"
 }
 
-# Add the random provider to required_providers (referenced in main.tf)
-terraform {
-  required_providers {
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.0"
-    }
-  }
-}

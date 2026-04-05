@@ -1,7 +1,7 @@
 resource "azurerm_postgresql_flexible_server" "main" {
-  name                   = "${var.app_name}-postgres"
+  name                   = "${var.app_name}-pgserver"
   resource_group_name    = azurerm_resource_group.main.name
-  location               = azurerm_resource_group.main.location
+  location               = var.postgres_location
   version                = "16"
   administrator_login    = var.postgres_admin_username
   administrator_password = var.postgres_admin_password
@@ -9,6 +9,8 @@ resource "azurerm_postgresql_flexible_server" "main" {
   # Burstable B1ms: cheapest option (~$12-15/month), fine for a class project
   sku_name   = var.postgres_sku
   storage_mb = 32768  # 32 GB minimum
+
+  zone = "1"
 
   backup_retention_days        = 7
   geo_redundant_backup_enabled = false

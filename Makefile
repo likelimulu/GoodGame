@@ -20,7 +20,8 @@ CONTAINER_APP ?= goodgame-api
 .PHONY: build push build-push deploy
 
 build:
-	docker build \
+	docker buildx build \
+	  --platform linux/amd64 \
 	  -f docker/Dockerfile.django.prod \
 	  -t $(FULL_IMAGE) \
 	  .

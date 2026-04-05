@@ -42,6 +42,12 @@ variable "postgres_sku" {
   default     = "B_Standard_B1ms"
 }
 
+variable "postgres_location" {
+  description = "Azure region for PostgreSQL (may differ from main location due to free-trial restrictions)"
+  type        = string
+  default     = "centralus"
+}
+
 # ── Django ────────────────────────────────────────────────────────────────────
 
 variable "django_secret_key" {
