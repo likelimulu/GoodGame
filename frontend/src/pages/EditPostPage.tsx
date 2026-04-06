@@ -40,6 +40,7 @@ export default function EditPostPage() {
   ) {
     e.preventDefault();
     const form = e.currentTarget;
+    const gameHubId = parseInt((form.elements.namedItem("game_hub_id") as HTMLSelectElement).value);
     const title = (form.elements.namedItem("title") as HTMLInputElement).value;
     const body = (form.elements.namedItem("body") as HTMLTextAreaElement).value;
     const tagsRaw = (form.elements.namedItem("tags") as HTMLInputElement).value;
@@ -50,6 +51,7 @@ export default function EditPostPage() {
     setSubmitError(null);
     setSubmitting(true);
     const { status: resStatus, data } = await api.put<Post | ApiError>(`/posts/${postId}`, {
+      game_hub_id: gameHubId,
       title,
       body,
       tags,
@@ -60,7 +62,7 @@ export default function EditPostPage() {
     setSubmitting(false);
 
     if (resStatus === 200) {
-      setPost(data as Post);
+      navigate("/my-posts");
     } else {
       setSubmitError((data as ApiError).error ?? "Failed to save post");
     }
@@ -70,7 +72,7 @@ export default function EditPostPage() {
     if (!confirm("Delete this post? This cannot be undone.")) return;
     const { status } = await api.delete<unknown>(`/posts/${postId}`);
     if (status === 200) {
-      navigate("/posts");
+      navigate("/my-posts");
     }
   }
 
@@ -204,7 +206,7 @@ export default function EditPostPage() {
                 <button
                   className="btn ghost"
                   type="button"
-                  onClick={() => navigate(-1)}
+                  onClick={() => navigate("/my-posts")}
                 >
                   Discard
                 </button>
@@ -216,8 +218,8 @@ export default function EditPostPage() {
           </form>
 
           <p className="inline-copy">
-            <Link className="text-link" to="/posts">
-              Back to feed
+            <Link className="text-link" to="/my-posts">
+              Back to My Posts
             </Link>
             .
           </p>
