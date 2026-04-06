@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from ninja import Schema
 
@@ -69,6 +69,7 @@ class PostIn(Schema):
 
 
 class PostUpdateIn(Schema):
+    game_hub_id: Optional[int] = None
     title: Optional[str] = None
     body: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -80,6 +81,13 @@ class PostUpdateIn(Schema):
 class PostAuthorOut(Schema):
     id: int
     username: str
+
+
+class PostVoteSummaryOut(Schema):
+    vote_score: int
+    upvote_count: int
+    downvote_count: int
+    current_user_vote: int = 0
 
 
 class PostOut(Schema):
@@ -95,3 +103,18 @@ class PostOut(Schema):
     is_edited: bool
     created_at: datetime
     updated_at: datetime
+    vote_score: int
+    upvote_count: int
+    downvote_count: int
+    current_user_vote: int = 0
+
+
+class PostVoteIn(Schema):
+    value: Literal[-1, 0, 1]
+
+
+# ── User profile schemas ───────────────────────────────────────────────────────
+
+
+class AvatarOut(Schema):
+    url: str

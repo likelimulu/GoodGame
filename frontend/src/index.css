@@ -130,6 +130,68 @@
     color: #fff7f1;
   }
 
+  .nav-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border: 3px solid rgba(255, 255, 255, 0.08);
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.86);
+  }
+
+  .nav-avatar svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .nav-avatar:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .nav-avatar-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    align-self: center;
+    flex-shrink: 0;
+  }
+
+  .nav-dropdown {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 140px;
+    border: 3px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(43, 54, 65, 0.99), rgba(27, 35, 42, 0.99));
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    z-index: 200;
+  }
+
+  .nav-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 12px 18px;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 18px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .nav-dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+  }
+
   .page-grid {
     display: grid;
     grid-template-columns: 0.82fr 1.18fr;
@@ -156,6 +218,7 @@
   .hero-card::before {
     content: "";
     position: absolute;
+    pointer-events: none;
     top: -8%;
     right: -30px;
     width: 180px;
@@ -175,6 +238,7 @@
   .hero-card::after {
     content: "";
     position: absolute;
+    pointer-events: none;
     right: 28px;
     top: 28px;
     width: 18px;
@@ -196,6 +260,7 @@
   .form-card::before {
     content: "";
     position: absolute;
+    pointer-events: none;
     inset: 0 auto auto 0;
     width: 100%;
     height: 14px;
@@ -379,6 +444,19 @@
     color: var(--color-gg-red-deep);
   }
 
+  .action-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .action-link:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
+
   .tag-row {
     display: flex;
     flex-wrap: wrap;
@@ -519,6 +597,186 @@
     flex-wrap: wrap;
   }
 
+  .feed-grid {
+    grid-template-columns: 0.7fr 1.3fr;
+  }
+
+  .feed-sidebar-stack {
+    margin-top: 28px;
+    display: grid;
+    gap: 16px;
+    max-width: 520px;
+  }
+
+  .feed-card {
+    display: grid;
+    gap: 18px;
+  }
+
+  .feed-list {
+    display: grid;
+    gap: 16px;
+  }
+
+  .feed-empty-state {
+    padding: 22px 0 4px;
+  }
+
+  .empty-title {
+    margin: 0 0 8px;
+    color: var(--color-gg-ink);
+    font-family: var(--font-bungee);
+    font-size: clamp(28px, 2.3vw, 40px);
+    line-height: 0.98;
+    text-transform: uppercase;
+  }
+
+  .post-card {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 16px;
+    padding: 18px;
+    border: 3px solid #d8bf88;
+    border-radius: 24px;
+    background: rgba(255, 251, 241, 0.88);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  .vote-rail {
+    display: grid;
+    align-content: start;
+    justify-items: center;
+    gap: 8px;
+    padding: 12px 10px;
+    border: 3px solid #d8bf88;
+    border-radius: 20px;
+    background: linear-gradient(180deg, #fff8e8, #ffe8ba);
+  }
+
+  .vote-btn {
+    width: 52px;
+    height: 52px;
+    border: 3px solid #d8bf88;
+    border-radius: 16px;
+    background: #fffdf8;
+    color: var(--color-gg-ink-soft);
+    font-size: 24px;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      transform 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .vote-btn:hover:not(:disabled),
+  .vote-btn:focus-visible {
+    transform: translateY(-1px);
+    outline: none;
+  }
+
+  .vote-btn.active.up {
+    border-color: var(--color-gg-red-deep);
+    background: linear-gradient(180deg, #f05e45, #cb3e28);
+    color: var(--color-gg-cream);
+  }
+
+  .vote-btn.active.down {
+    border-color: var(--color-gg-blue-deep);
+    background: linear-gradient(180deg, #63c3ff, #3694d4);
+    color: var(--color-gg-cream);
+  }
+
+  .vote-btn:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
+
+  .vote-score {
+    color: var(--color-gg-ink);
+    font-family: var(--font-bungee);
+    font-size: 34px;
+    line-height: 1;
+  }
+
+  .vote-meta {
+    margin: 0;
+    color: var(--color-gg-ink-soft);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: center;
+  }
+
+  .post-body {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .post-meta,
+  .post-badges,
+  .post-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .post-meta {
+    color: var(--color-gg-ink-soft);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .post-hub {
+    color: var(--color-gg-red-deep);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 9999px;
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .pill-question {
+    background: #e8f6ff;
+    color: #1b4d70;
+  }
+
+  .pill-warning {
+    background: #ffe2bd;
+    color: #8b4d08;
+  }
+
+  .post-title {
+    margin: 0;
+    color: var(--color-gg-ink);
+    font-family: var(--font-bungee);
+    font-size: clamp(26px, 2.6vw, 38px);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .post-copy {
+    margin: 0;
+    color: var(--color-gg-ink);
+    font-size: 23px;
+    line-height: 1.15;
+    white-space: pre-wrap;
+  }
+
+  .compact {
+    font-size: 18px;
+  }
+
   @media (max-width: 1180px) {
     .page-grid {
       grid-template-columns: 1fr;
@@ -584,6 +842,21 @@
 
     .action-row {
       display: grid;
+    }
+
+    .post-card {
+      grid-template-columns: 1fr;
+    }
+
+    .vote-rail {
+      grid-auto-flow: column;
+      grid-template-columns: repeat(4, auto);
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .post-copy {
+      font-size: 21px;
     }
   }
 }
