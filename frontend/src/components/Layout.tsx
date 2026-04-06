@@ -1,9 +1,23 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownOpen]);
   const isAccount = pathname === "/login" || pathname === "/signup";
   const isFeed = pathname === "/posts";
   const isMyPosts = pathname === "/my-posts";
@@ -34,9 +48,34 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           >
             Post Studio
           </Link>
-          <Link className={isAccount ? "active" : ""} to="/login">
-            Account
-          </Link>
+          {user ? (
+            <div className="nav-avatar-wrapper" ref={dropdownRef}>
+              <button
+                className="nav-avatar"
+                aria-label="Account"
+                aria-expanded={dropdownOpen}
+                onClick={() => setDropdownOpen((o) => !o)}
+              >
+                <svg viewBox="0 0 448 512" fill="currentColor" aria-hidden="true">
+                  <path d="M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3C0 498.7 13.3 512 29.7 512l388.6 0c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304l-91.4 0z" />
+                </svg>
+              </button>
+              {dropdownOpen && (
+                <div className="nav-dropdown">
+                  <button
+                    className="nav-dropdown-item"
+                    onClick={() => { logout(); setDropdownOpen(false); }}
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link className={isAccount ? "active" : ""} to="/login">
+              Login
+            </Link>
+          )}
         </nav>
       </header>
       {children}
