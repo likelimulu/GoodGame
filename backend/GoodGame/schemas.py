@@ -111,3 +111,10 @@ class PostOut(Schema):
 
 class PostVoteIn(Schema):
     value: Literal[-1, 0, 1]
+
+
+# ── User profile schemas ───────────────────────────────────────────────────────
+
+
+class AvatarOut(Schema):
+    url: str

@@ -1,6 +1,7 @@
 from typing import List
 
-from ninja import Router
+from ninja import File, Router
+from ninja.files import UploadedFile
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from django.conf import settings
@@ -11,6 +12,7 @@ from django.shortcuts import get_object_or_404
 from .models import GameHub, Post, PostVote, Tag
 from .schemas import (
     AuthUserOut,
+    AvatarOut,
     ErrorOut,
     GameHubOut,
     LoginIn,
@@ -69,6 +71,20 @@ def me(request):
         return 401, {"error": "Authentication required"}
 
     return 200, request.user
+
+
+# ── User profile endpoints ─────────────────────────────────────
+
+
+@router.put("/users/me/avatar", response={200: AvatarOut, 401: ErrorOut})
+def update_avatar(request, file: UploadedFile = File(...)):
+    """Upload a new profile picture. Saves to Azure Blob Storage (or local media in dev)."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    profile = request.user.profile
+    profile.profile_picture.save(file.name, file, save=True)
+    return 200, {"url": profile.profile_picture.url}
 
 
 # ── GameHub endpoints ─────────────────────────────────────────
