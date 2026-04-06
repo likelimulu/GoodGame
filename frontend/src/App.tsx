@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import CreatePostPage from "./pages/CreatePostPage";
 import EditPostPage from "./pages/EditPostPage";
+import PostsFeedPage from "./pages/PostsFeedPage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -19,6 +20,15 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/posts" element={<PostsFeedPage />} />
+          <Route
+            path="/my-posts"
+            element={
+              <RequireAuth>
+                <PostsFeedPage mineOnly />
+              </RequireAuth>
+            }
+          />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route
@@ -37,7 +47,7 @@ function App() {
               </RequireAuth>
             }
           />
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/posts" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

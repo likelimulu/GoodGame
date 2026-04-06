@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import TagEditor from "../components/TagEditor";
 import { api } from "../api/client";
@@ -7,16 +7,30 @@ import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
 
 export default function CreatePostPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
+  const [selectedHubId, setSelectedHubId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const requestedHubId = useMemo(() => searchParams.get("hub") ?? "", [searchParams]);
 
   useEffect(() => {
     const controller = new AbortController();
-    api.get<GameHub[]>("/gamehubs", controller.signal).then(({ data }) => setGameHubs(data));
+    api.get<GameHub[]>("/gamehubs", controller.signal).then(({ data }) => {
+      setGameHubs(data);
+      if (data.length === 0) return;
+
+      const requestedHubExists = data.some((hub) => String(hub.id) === requestedHubId);
+      if (requestedHubExists) {
+        setSelectedHubId(requestedHubId);
+        return;
+      }
+
+      setSelectedHubId(String(data[0].id));
+    });
     return () => controller.abort();
-  }, []);
+  }, [requestedHubId]);
 
   async function handleSubmit(
     e: { preventDefault(): void; currentTarget: HTMLFormElement },
@@ -46,7 +60,7 @@ export default function CreatePostPage() {
     setSubmitting(false);
 
     if (resStatus === 201) {
-      navigate(`/posts/${(data as Post).id}/edit`);
+      navigate("/my-posts");
     } else {
       setError((data as ApiError).error ?? "Failed to create post");
     }
@@ -81,7 +95,13 @@ export default function CreatePostPage() {
 
             <div className="field">
               <label htmlFor="post-create-forum">Forum</label>
-              <select id="post-create-forum" name="game_hub_id" required>
+              <select
+                id="post-create-forum"
+                name="game_hub_id"
+                required
+                value={selectedHubId}
+                onChange={(e) => setSelectedHubId(e.target.value)}
+              >
                 {gameHubs.map((hub) => (
                   <option key={hub.id} value={hub.id}>
                     {hub.name}

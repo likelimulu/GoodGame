@@ -5,7 +5,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("GoodGame", "0002_gamehub_tag_post"),
+        ("GoodGame", "0003_postvote_postvote_unique_post_vote_per_user_and_more"),
     ]
 
     operations = [

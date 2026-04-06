@@ -25,7 +25,7 @@ export default function LoginPage() {
     if (result.error) {
       setError(result.error);
     } else {
-      navigate("/posts/create");
+      navigate("/posts");
     }
   }
 

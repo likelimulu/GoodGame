@@ -64,3 +64,30 @@ class Post(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class PostVote(models.Model):
+    class Value(models.IntegerChoices):
+        DOWNVOTE = -1, "Downvote"
+        UPVOTE = 1, "Upvote"
+
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="votes")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="post_votes")
+    value = models.SmallIntegerField(choices=Value.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("post", "user"),
+                name="unique_post_vote_per_user",
+            ),
+            models.CheckConstraint(
+                check=models.Q(value__in=[-1, 1]),
+                name="post_vote_value_valid",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.post_id} ({self.value})"
