@@ -1,0 +1,21 @@
+# Terraform state — stored remotely in Azure Blob, never commit locally
+*.tfstate
+*.tfstate.backup
+
+# Terraform working directory
+.terraform/
+.terraform.lock.hcl
+
+# Secret variable files — use TF_VAR_* env vars instead
+*.secret.tfvars
+*.auto.tfvars
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files (local dev only)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
