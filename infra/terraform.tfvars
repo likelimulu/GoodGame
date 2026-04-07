@@ -23,4 +23,5 @@ github_branch   = "main"
 
 # Update cors_allowed_origins after first Static Web Apps deploy
 # (Azure assigns the URL automatically):
-cors_allowed_origins = ""
+# Ideally, we have a good game url at some point.
+cors_allowed_origins = "https://kind-pond-09e9e9510.2.azurestaticapps.net"
