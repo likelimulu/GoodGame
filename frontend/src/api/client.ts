@@ -9,7 +9,8 @@ async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<ApiResponse<T>> {
-  const res = await fetch(`/api${path}`, {
+  const base = import.meta.env.VITE_API_URL ?? "";
+  const res = await fetch(`${base}/api${path}`, {
     method,
     credentials: "include",
     headers: body !== undefined ? { "Content-Type": "application/json" } : {},
