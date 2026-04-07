@@ -2,10 +2,12 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/useAuth";
+import { useToast } from "../context/ToastContext";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +26,9 @@ export default function LoginPage() {
 
     if (result.error) {
       setError(result.error);
+      addToast(result.error, "error");
     } else {
+      addToast("Welcome back!", "success");
       navigate("/posts");
     }
   }

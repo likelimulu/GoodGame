@@ -33,15 +33,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     const controller = new AbortController();
     api
       .get<AuthUser | ApiError>("/auth/me", controller.signal)
       .then(({ status, data }) => {
-        if (status === 200) setUser(data as AuthUser);
+        if (!cancelled && status === 200) setUser(data as AuthUser);
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
-    return () => controller.abort();
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, []);
 
   const login = useCallback(

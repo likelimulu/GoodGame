@@ -878,6 +878,185 @@
     }
   }
 
+  /* ── Inline delete confirmation ─────────────────────────────────────── */
+
+  .confirm-delete-inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .confirm-delete-label {
+    color: var(--color-gg-red-deep);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .btn-inline {
+    padding: 6px 14px;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    font-family: var(--font-chakra);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .btn-inline-danger {
+    border-color: var(--color-gg-red-deep);
+    background: linear-gradient(180deg, #f05e45, #cb3e28);
+    color: #fff5f3;
+  }
+
+  .btn-inline-cancel {
+    border-color: #d8bf88;
+    background: rgba(255, 255, 255, 0.4);
+    color: var(--color-gg-ink-soft);
+  }
+
+  .btn-inline-cancel:hover {
+    background: rgba(255, 255, 255, 0.6);
+  }
+
+  /* ── Error boundary fallback ─────────────────────────────────────────── */
+
+  .error-boundary-fallback {
+    display: grid;
+    justify-items: center;
+    gap: 18px;
+    padding: 60px 24px;
+    text-align: center;
+  }
+
+  .error-boundary-title {
+    margin: 0;
+    color: var(--color-gg-yellow);
+    font-family: var(--font-bungee);
+    font-size: clamp(32px, 4vw, 52px);
+    text-transform: uppercase;
+  }
+
+  .error-boundary-body {
+    margin: 0;
+    color: rgba(255, 248, 230, 0.8);
+    font-size: 22px;
+    max-width: 36ch;
+  }
+
+  /* ── Toast notifications ───────────────────────────────────────────── */
+
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    display: grid;
+    gap: 10px;
+    z-index: 9999;
+    pointer-events: none;
+  }
+
+  .toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 280px;
+    max-width: 420px;
+    padding: 14px 18px;
+    border-radius: 16px;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.2;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    animation: toast-slide-in 280ms ease-out;
+  }
+
+  .toast-success {
+    background: linear-gradient(180deg, #4cb868, #3a9453);
+    color: #f0fff4;
+    border: 3px solid #2e7a3f;
+  }
+
+  .toast-error {
+    background: linear-gradient(180deg, #e45a42, #b83828);
+    color: #fff5f3;
+    border: 3px solid #982a1d;
+  }
+
+  .toast-info {
+    background: linear-gradient(180deg, #4cb8ff, #3694d4);
+    color: #f0f9ff;
+    border: 3px solid #2d6c99;
+  }
+
+  .toast-message {
+    flex: 1;
+  }
+
+  .toast-close {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.18);
+    color: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .toast-close:hover {
+    background: rgba(255, 255, 255, 0.32);
+  }
+
+  @keyframes toast-slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* ── Loading spinner ───────────────────────────────────────────────── */
+
+  .spinner-wrapper {
+    display: grid;
+    justify-items: center;
+    gap: 14px;
+    padding: 32px 0;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #d8bf88;
+    border-top-color: var(--color-gg-red);
+    border-radius: 9999px;
+    animation: spin 0.7s linear infinite;
+  }
+
+  .spinner-text {
+    margin: 0;
+    color: var(--color-gg-ink-soft);
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   @media (max-width: 880px) {
     .app-shell {
       padding: 12px;

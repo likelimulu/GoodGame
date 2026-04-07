@@ -4,10 +4,12 @@ import Layout from "../components/Layout";
 import TagEditor from "../components/TagEditor";
 import { api } from "../api/client";
 import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
+import { useToast } from "../context/ToastContext";
 
 export default function CreatePostPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { addToast } = useToast();
 
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
   const [selectedHubId, setSelectedHubId] = useState("");
@@ -17,7 +19,8 @@ export default function CreatePostPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    api.get<GameHub[]>("/gamehubs", controller.signal).then(({ data }) => {
+    api.get<GameHub[]>("/gamehubs", controller.signal).then(({ status, data }) => {
+      if (status !== 200 || !Array.isArray(data)) return;
       setGameHubs(data);
       if (data.length === 0) return;
 
@@ -60,9 +63,12 @@ export default function CreatePostPage() {
     setSubmitting(false);
 
     if (resStatus === 201) {
+      addToast("Post created!", "success");
       navigate("/my-posts");
     } else {
-      setError((data as ApiError).error ?? "Failed to create post");
+      const errMsg = (data as ApiError).error ?? "Failed to create post";
+      setError(errMsg);
+      addToast(errMsg, "error");
     }
   }
 
