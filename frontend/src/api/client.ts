@@ -9,11 +9,14 @@ async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<ApiResponse<T>> {
+  const isFormData = body instanceof FormData;
   const res = await fetch(`/api${path}`, {
     method,
     credentials: "include",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    headers:
+      body !== undefined && !isFormData ? { "Content-Type": "application/json" } : {},
+    body:
+      body === undefined ? undefined : isFormData ? (body as FormData) : JSON.stringify(body),
     signal,
   });
   const data: T = await res.json();

@@ -90,6 +90,20 @@ class PostVoteSummaryOut(Schema):
     current_user_vote: int = 0
 
 
+class PostCommentAuthorOut(Schema):
+    id: int
+    username: str
+
+
+class PostCommentOut(Schema):
+    id: int
+    author: PostCommentAuthorOut
+    body: str
+    attachment_name: Optional[str] = None
+    attachment_url: Optional[str] = None
+    created_at: datetime
+
+
 class PostOut(Schema):
     id: int
     game_hub: GameHubOut
@@ -107,6 +121,7 @@ class PostOut(Schema):
     upvote_count: int
     downvote_count: int
     current_user_vote: int = 0
+    comment_count: int = 0
 
 
 class PostVoteIn(Schema):

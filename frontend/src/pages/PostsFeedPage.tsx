@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import PostComments from "../components/PostComments";
 import VoteControls from "../components/VoteControls";
 import { api } from "../api/client";
 import type {
@@ -24,7 +25,9 @@ function sortPosts(posts: Post[], mineOnly: boolean) {
 
 export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const openCommentsByDefault = searchParams.get("comments") === "open";
 
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
   const [selectedHubId, setSelectedHubId] = useState("all");
@@ -124,6 +127,16 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
     setError((data as ApiError).error ?? "Failed to delete post");
   }
 
+  function handleCommentCreated(postId: number) {
+    setPosts((currentPosts) =>
+      currentPosts.map((currentPost) =>
+        currentPost.id === postId
+          ? { ...currentPost, comment_count: currentPost.comment_count + 1 }
+          : currentPost,
+      ),
+    );
+  }
+
   return (
     <Layout>
       <main className="page-grid feed-grid">
@@ -185,8 +198,8 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                 ? mineOnly
                   ? "Edit and delete stay here. Creating a new post returns you to this list instead of opening edit mode."
                   : selectedHubId === "all"
-                    ? "Upvote or downvote from the feed. Click the same arrow again to clear your vote."
-                    : "Voting updates the feed order live, and new posts will open with this hub preselected."
+                    ? "Vote and comment directly from the feed. Click the same arrow again to clear your vote."
+                    : "Voting updates the feed order live, comments stay attached to each post, and new posts open with this hub preselected."
                 : "Sign in to vote, create posts, and edit your own threads."}
             </p>
           </div>
@@ -198,7 +211,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
           <p className="helper">
             {mineOnly
               ? "Your own posts are shown here so you can edit or delete them without mixing that flow into new post creation."
-              : "Published posts are ranked by player votes and shown newest first within the current list."}
+              : "Published posts are ranked by player votes, and each thread can collect comments with optional attachments."}
           </p>
 
           {error && <p className="form-error">{error}</p>}
@@ -276,10 +289,19 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                         </Link>
                       ) : (
                         <span className="helper compact">
-                          Vote to surface useful posts for the next reader.
+                          Vote and comment to surface useful posts for the next reader.
                         </span>
                       )}
                     </div>
+
+                    {!mineOnly && (
+                      <PostComments
+                        post={post}
+                        canComment={Boolean(user)}
+                        expandedByDefault={openCommentsByDefault}
+                        onCommentCreated={() => handleCommentCreated(post.id)}
+                      />
+                    )}
                   </div>
                 </article>
               ))}

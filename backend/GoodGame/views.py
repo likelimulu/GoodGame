@@ -1,15 +1,15 @@
 from typing import List
 
-from ninja import File, Router
+from ninja import File, Form, Router
 from ninja.files import UploadedFile
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from django.conf import settings
-from django.db.models import Count, IntegerField, Q, Sum, Value
+from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 
-from .models import GameHub, Post, PostVote, Tag
+from .models import GameHub, Post, PostComment, PostVote, Tag
 from .schemas import (
     AuthUserOut,
     AvatarOut,
@@ -18,6 +18,7 @@ from .schemas import (
     LoginIn,
     MessageOut,
     PostIn,
+    PostCommentOut,
     PostOut,
     PostVoteIn,
     PostVoteSummaryOut,
@@ -112,15 +113,45 @@ def _posts_with_related_data():
     return Post.objects.select_related("game_hub", "author").prefetch_related("tags")
 
 
-def _annotate_vote_summary(queryset):
+def _annotate_post_stats(queryset):
+    vote_totals = PostVote.objects.filter(post_id=OuterRef("pk")).order_by().values("post")
+    comment_totals = (
+        PostComment.objects.filter(post_id=OuterRef("pk")).order_by().values("post")
+    )
+
     return queryset.annotate(
         vote_score=Coalesce(
-            Sum("votes__value"),
+            Subquery(
+                vote_totals.annotate(total=Sum("value")).values("total")[:1],
+                output_field=IntegerField(),
+            ),
             Value(0),
-            output_field=IntegerField(),
         ),
-        upvote_count=Count("votes", filter=Q(votes__value=PostVote.Value.UPVOTE)),
-        downvote_count=Count("votes", filter=Q(votes__value=PostVote.Value.DOWNVOTE)),
+        upvote_count=Coalesce(
+            Subquery(
+                vote_totals.annotate(
+                    total=Count("id", filter=Q(value=PostVote.Value.UPVOTE))
+                ).values("total")[:1],
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        ),
+        downvote_count=Coalesce(
+            Subquery(
+                vote_totals.annotate(
+                    total=Count("id", filter=Q(value=PostVote.Value.DOWNVOTE))
+                ).values("total")[:1],
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        ),
+        comment_count=Coalesce(
+            Subquery(
+                comment_totals.annotate(total=Count("id")).values("total")[:1],
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        ),
     )
 
 
@@ -138,10 +169,30 @@ def _attach_current_user_vote(posts, user):
     return posts
 
 
-def _get_post_with_vote_summary(post_id: int, user):
-    post = get_object_or_404(_annotate_vote_summary(_posts_with_related_data()), id=post_id)
+def _get_post_with_stats(post_id: int, user):
+    post = get_object_or_404(_annotate_post_stats(_posts_with_related_data()), id=post_id)
     _attach_current_user_vote([post], user)
     return post
+
+
+def _absolute_file_url(request, field_file):
+    if not field_file:
+        return None
+
+    file_url = field_file.url
+    if file_url.startswith("http://") or file_url.startswith("https://"):
+        return file_url
+    return request.build_absolute_uri(file_url)
+
+
+def _attach_comment_file_fields(comments, request):
+    comments = list(comments)
+    for comment in comments:
+        comment.attachment_name = (
+            comment.attachment.name.rsplit("/", 1)[-1] if comment.attachment else None
+        )
+        comment.attachment_url = _absolute_file_url(request, comment.attachment)
+    return comments
 
 
 @router.post("/posts", response={201: PostOut, 401: ErrorOut, 404: ErrorOut})
@@ -165,13 +216,13 @@ def create_post(request, data: PostIn):
     if data.tags:
         post.tags.set(_get_or_create_tags(data.tags))
 
-    return 201, _get_post_with_vote_summary(post.id, request.user)
+    return 201, _get_post_with_stats(post.id, request.user)
 
 
 @router.get("/posts", response={200: List[PostOut], 401: ErrorOut})
 def list_posts(request, game_hub_id: int = None, status: str = "published", mine: bool = False):
     """List public posts or the authenticated user's own posts."""
-    qs = _annotate_vote_summary(_posts_with_related_data())
+    qs = _annotate_post_stats(_posts_with_related_data())
 
     if mine:
         if not request.user.is_authenticated:
@@ -188,7 +239,7 @@ def list_posts(request, game_hub_id: int = None, status: str = "published", mine
 @router.get("/posts/{post_id}", response={200: PostOut, 404: ErrorOut})
 def get_post(request, post_id: int):
     """Retrieve a single post by id."""
-    post = _get_post_with_vote_summary(post_id, request.user)
+    post = _get_post_with_stats(post_id, request.user)
     if post.status == Post.Status.DELETED:
         return 404, {"error": "Post not found"}
     return 200, post
@@ -224,7 +275,7 @@ def update_post(request, post_id: int, data: PostUpdateIn):
     if data.tags is not None:
         post.tags.set(_get_or_create_tags(data.tags))
 
-    return 200, _get_post_with_vote_summary(post.id, request.user)
+    return 200, _get_post_with_stats(post.id, request.user)
 
 
 @router.delete("/posts/{post_id}", response={200: MessageOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
@@ -263,4 +314,45 @@ def vote_on_post(request, post_id: int, data: PostVoteIn):
             defaults={"value": data.value},
         )
 
-    return 200, _get_post_with_vote_summary(post.id, request.user)
+    return 200, _get_post_with_stats(post.id, request.user)
+
+
+@router.get("/posts/{post_id}/comments", response={200: List[PostCommentOut], 404: ErrorOut})
+def list_post_comments(request, post_id: int):
+    """List comments for a published post."""
+    post = get_object_or_404(Post, id=post_id, status=Post.Status.PUBLISHED)
+    comments = (
+        PostComment.objects.filter(post=post).select_related("author")
+    )
+    return 200, _attach_comment_file_fields(comments, request)
+
+
+@router.post(
+    "/posts/{post_id}/comments",
+    response={201: PostCommentOut, 400: ErrorOut, 401: ErrorOut, 404: ErrorOut},
+)
+def create_post_comment(
+    request,
+    post_id: int,
+    body: str = Form(...),
+    attachment: UploadedFile = File(None),
+):
+    """Add a comment to a published post, with an optional file attachment."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    post = get_object_or_404(Post, id=post_id, status=Post.Status.PUBLISHED)
+    cleaned_body = body.strip()
+    if not cleaned_body:
+        return 400, {"error": "Comment text is required"}
+
+    comment = PostComment.objects.create(
+        post=post,
+        author=request.user,
+        body=cleaned_body,
+    )
+    if attachment:
+        comment.attachment.save(attachment.name, attachment, save=True)
+
+    _attach_comment_file_fields([comment], request)
+    return 201, comment

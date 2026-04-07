@@ -773,6 +773,101 @@
     white-space: pre-wrap;
   }
 
+  .comment-panel {
+    display: grid;
+    gap: 12px;
+    padding-top: 6px;
+    border-top: 2px dashed rgba(54, 66, 76, 0.16);
+  }
+
+  .comment-header,
+  .comment-form-row,
+  .comment-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .comment-stack,
+  .comment-list,
+  .comment-form {
+    display: grid;
+    gap: 12px;
+  }
+
+  .comment-card {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border: 2px solid rgba(54, 66, 76, 0.16);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.52);
+  }
+
+  .comment-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: var(--color-gg-ink-soft);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .comment-copy {
+    margin: 0;
+    color: var(--color-gg-ink);
+    font-size: 21px;
+    line-height: 1.15;
+    white-space: pre-wrap;
+  }
+
+  .comment-attachment {
+    width: fit-content;
+    color: var(--color-gg-blue-deep);
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.05;
+    text-decoration: none;
+  }
+
+  .comment-form {
+    padding: 16px;
+    border: 2px solid rgba(54, 66, 76, 0.16);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.56);
+  }
+
+  .comment-form .field textarea {
+    min-height: 132px;
+    font-size: 24px;
+  }
+
+  .comment-file {
+    display: grid;
+    gap: 8px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-gg-ink);
+  }
+
+  .comment-file-label {
+    color: #695d43;
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .comment-file input[type="file"] {
+    max-width: 100%;
+    color: var(--color-gg-ink-soft);
+    font: inherit;
+    font-size: 17px;
+  }
+
   .compact {
     font-size: 18px;
   }
@@ -857,6 +952,10 @@
 
     .post-copy {
       font-size: 21px;
+    }
+
+    .comment-copy {
+      font-size: 20px;
     }
   }
 }
