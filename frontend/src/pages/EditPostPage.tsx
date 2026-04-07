@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import TagEditor from "../components/TagEditor";
+import Spinner from "../components/Spinner";
 import { api } from "../api/client";
 import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
+import { useToast } from "../context/ToastContext";
 
 export default function EditPostPage() {
   const { postId } = useParams<{ postId: string }>();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const [post, setPost] = useState<Post | null>(null);
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
@@ -19,7 +22,9 @@ export default function EditPostPage() {
     const controller = new AbortController();
     const { signal } = controller;
 
-    api.get<GameHub[]>("/gamehubs", signal).then(({ data }) => setGameHubs(data));
+    api.get<GameHub[]>("/gamehubs", signal).then(({ status, data }) => {
+      if (status === 200 && Array.isArray(data)) setGameHubs(data);
+    });
 
     if (postId) {
       api.get<Post | ApiError>(`/posts/${postId}`, signal).then(({ status, data }) => {
@@ -62,9 +67,12 @@ export default function EditPostPage() {
     setSubmitting(false);
 
     if (resStatus === 200) {
+      addToast("Post updated!", "success");
       navigate("/my-posts");
     } else {
-      setSubmitError((data as ApiError).error ?? "Failed to save post");
+      const errMsg = (data as ApiError).error ?? "Failed to save post";
+      setSubmitError(errMsg);
+      addToast(errMsg, "error");
     }
   }
 
@@ -72,7 +80,10 @@ export default function EditPostPage() {
     if (!confirm("Delete this post? This cannot be undone.")) return;
     const { status } = await api.delete<unknown>(`/posts/${postId}`);
     if (status === 200) {
+      addToast("Post deleted", "success");
       navigate("/my-posts");
+    } else {
+      addToast("Failed to delete post", "error");
     }
   }
 
@@ -83,6 +94,18 @@ export default function EditPostPage() {
           <section className="hero-card">
             <h1 className="headline">Post Not Found</h1>
             <p className="subhead">{loadError}</p>
+          </section>
+        </main>
+      </Layout>
+    );
+  }
+
+  if (!post) {
+    return (
+      <Layout>
+        <main className="page-grid">
+          <section className="hero-card">
+            <Spinner text="Loading post…" />
           </section>
         </main>
       </Layout>
