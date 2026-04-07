@@ -3,8 +3,9 @@ import json
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
 
-from .models import GameHub, Post, PostVote, Tag
+from .models import GameHub, Post, PostComment, PostVote, Tag
 
 
 class AuthSessionApiTests(TestCase):
@@ -541,6 +542,118 @@ class PostVoteApiTests(TestCase):
             f"/api/posts/{draft_post.id}/vote",
             data=json.dumps({"value": 1}),
             content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+
+class PostCommentApiTests(TestCase):
+    def setUp(self):
+        self.author = User.objects.create_user(
+            username="author", password="pass-123", email="author@example.com"
+        )
+        self.commenter = User.objects.create_user(
+            username="commenter", password="pass-456", email="commenter@example.com"
+        )
+        self.hub = GameHub.objects.create(name="Elden Hub", slug="elden-hub")
+        self.post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Best faith build",
+            body="Share your setup.",
+            status=Post.Status.PUBLISHED,
+        )
+
+    def _login(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "commenter", "password": "pass-456"}),
+            content_type="application/json",
+        )
+
+    def test_list_comments_returns_public_comment_thread(self):
+        PostComment.objects.create(post=self.post, author=self.commenter, body="Try dual seals.")
+
+        response = self.client.get(f"/api/posts/{self.post.id}/comments")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]["author"]["username"], "commenter")
+        self.assertEqual(response.json()[0]["body"], "Try dual seals.")
+
+    def test_create_comment_requires_authentication(self):
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/comments",
+            data={"body": "Looks strong."},
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_create_comment_on_published_post(self):
+        self._login()
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/comments",
+            data={"body": "This setup carried me through the final bosses."},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["body"], "This setup carried me through the final bosses.")
+        self.assertEqual(response.json()["author"]["username"], "commenter")
+        self.assertTrue(
+            PostComment.objects.filter(post=self.post, author=self.commenter).exists()
+        )
+
+    def test_create_comment_rejects_blank_body(self):
+        self._login()
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/comments",
+            data={"body": "   "},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Comment text is required")
+
+    def test_create_comment_with_attachment(self):
+        self._login()
+        attachment = SimpleUploadedFile(
+            "route-notes.txt",
+            b"farm runes at the palace approach",
+            content_type="text/plain",
+        )
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/comments",
+            data={"body": "Attached my farming route.", "attachment": attachment},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["attachment_name"], "route-notes.txt")
+        self.assertIn("/media/comment_attachments/route-notes", response.json()["attachment_url"])
+
+    def test_posts_include_comment_count(self):
+        PostComment.objects.create(post=self.post, author=self.commenter, body="One")
+        PostComment.objects.create(post=self.post, author=self.author, body="Two")
+
+        response = self.client.get("/api/posts")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["comment_count"], 2)
+
+    def test_cannot_comment_on_draft_post(self):
+        draft_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Draft",
+            body="Still editing",
+            status=Post.Status.DRAFT,
+        )
+        self._login()
+
+        response = self.client.post(
+            f"/api/posts/{draft_post.id}/comments",
+            data={"body": "Looks good."},
         )
 
         self.assertEqual(response.status_code, 404)
