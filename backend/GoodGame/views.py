@@ -180,7 +180,12 @@ def _absolute_file_url(request, field_file):
         return None
 
     file_url = field_file.url
+    # Already an absolute URL (e.g. Azure Blob Storage) — return as-is.
     if file_url.startswith("http://") or file_url.startswith("https://"):
+        return file_url
+    # In local dev the Vite proxy handles /media, so a relative path works
+    # and avoids returning the Docker-internal hostname (e.g. api:8000).
+    if settings.DEBUG:
         return file_url
     return request.build_absolute_uri(file_url)
 
