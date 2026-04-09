@@ -42,11 +42,12 @@ async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<ApiResponse<T>> {
+  const base = import.meta.env.VITE_API_URL ?? "";
   const isFormData = body instanceof FormData;
 
   let res: Response;
   try {
-    res = await fetch(`/api${path}`, {
+    res = await fetch(`${base}/api${path}`, {
       method,
       credentials: "include",
       headers:
@@ -56,11 +57,9 @@ async function request<T>(
       signal,
     });
   } catch (err: unknown) {
-    // AbortError should be re-thrown so callers can ignore it via .catch()
     if (err instanceof DOMException && err.name === "AbortError") {
       throw err;
     }
-    // Network failure (offline, DNS, CORS blocked, etc.)
     return {
       status: 0,
       data: {
@@ -70,7 +69,6 @@ async function request<T>(
     };
   }
 
-  // The server may occasionally return non-JSON (e.g. 502 HTML error page).
   const contentType = res.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
     return {
