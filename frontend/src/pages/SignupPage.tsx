@@ -2,10 +2,12 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/useAuth";
+import { useToast } from "../context/ToastContext";
 
 export default function SignupPage() {
   const { signup } = useAuth();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -30,7 +32,9 @@ export default function SignupPage() {
 
     if (result.error) {
       setError(result.error);
+      addToast(result.error, "error");
     } else {
+      addToast("Account created! Please log in.", "success");
       navigate("/login");
     }
   }

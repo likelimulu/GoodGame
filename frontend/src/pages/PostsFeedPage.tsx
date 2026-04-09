@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import PostComments from "../components/PostComments";
 import VoteControls from "../components/VoteControls";
+import Spinner from "../components/Spinner";
 import { api } from "../api/client";
 import type {
   ApiMessage,
@@ -11,6 +13,7 @@ import type {
   PostVoteSummary,
 } from "../api/types";
 import { useAuth } from "../context/useAuth";
+import { useToast } from "../context/ToastContext";
 
 function sortPosts(posts: Post[], mineOnly: boolean) {
   return [...posts].sort((a, b) => {
@@ -24,7 +27,10 @@ function sortPosts(posts: Post[], mineOnly: boolean) {
 
 export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const openCommentsByDefault = searchParams.get("comments") === "open";
+  const { addToast } = useToast();
 
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
   const [selectedHubId, setSelectedHubId] = useState("all");
@@ -32,6 +38,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
   const [loading, setLoading] = useState(true);
   const [busyPostId, setBusyPostId] = useState<number | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,8 +54,10 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
       api.get<Post[] | ApiError>(postPath, signal),
     ])
       .then(([gameHubResponse, postsResponse]) => {
-        setGameHubs(gameHubResponse.data);
-        if (postsResponse.status === 200) {
+        if (gameHubResponse.status === 200 && Array.isArray(gameHubResponse.data)) {
+          setGameHubs(gameHubResponse.data);
+        }
+        if (postsResponse.status === 200 && Array.isArray(postsResponse.data)) {
           setPosts(sortPosts(postsResponse.data as Post[], mineOnly));
         } else {
           setError((postsResponse.data as ApiError).error ?? "Failed to load posts");
@@ -100,12 +109,13 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
       return;
     }
 
-    setError((data as ApiError).error ?? "Failed to save vote");
+    const errMsg = (data as ApiError).error ?? "Failed to save vote";
+    setError(errMsg);
+    addToast(errMsg, "error");
   }
 
   async function handleDelete(post: Post) {
-    if (!confirm(`Delete "${post.title}"? This cannot be undone.`)) return;
-
+    setConfirmDeleteId(null);
     setDeletingPostId(post.id);
     setError(null);
     const { status, data } = await api.delete<ApiMessage | ApiError>(`/posts/${post.id}`);
@@ -113,6 +123,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
 
     if (status === 200) {
       setPosts((currentPosts) => currentPosts.filter((currentPost) => currentPost.id !== post.id));
+      addToast("Post deleted", "success");
       return;
     }
 
@@ -121,7 +132,19 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
       return;
     }
 
-    setError((data as ApiError).error ?? "Failed to delete post");
+    const errMsg = (data as ApiError).error ?? "Failed to delete post";
+    setError(errMsg);
+    addToast(errMsg, "error");
+  }
+
+  function handleCommentCreated(postId: number) {
+    setPosts((currentPosts) =>
+      currentPosts.map((currentPost) =>
+        currentPost.id === postId
+          ? { ...currentPost, comment_count: currentPost.comment_count + 1 }
+          : currentPost,
+      ),
+    );
   }
 
   return (
@@ -185,8 +208,8 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                 ? mineOnly
                   ? "Edit and delete stay here. Creating a new post returns you to this list instead of opening edit mode."
                   : selectedHubId === "all"
-                    ? "Upvote or downvote from the feed. Click the same arrow again to clear your vote."
-                    : "Voting updates the feed order live, and new posts will open with this hub preselected."
+                    ? "Vote and comment directly from the feed. Click the same arrow again to clear your vote."
+                    : "Voting updates the feed order live, comments stay attached to each post, and new posts open with this hub preselected."
                 : "Sign in to vote, create posts, and edit your own threads."}
             </p>
           </div>
@@ -198,14 +221,14 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
           <p className="helper">
             {mineOnly
               ? "Your own posts are shown here so you can edit or delete them without mixing that flow into new post creation."
-              : "Published posts are ranked by player votes and shown newest first within the current list."}
+              : "Published posts are ranked by player votes, and each thread can collect comments with optional attachments."}
           </p>
 
           {error && <p className="form-error">{error}</p>}
 
           {loading ? (
             <div className="feed-empty-state">
-              <p className="helper">Loading posts…</p>
+              <Spinner text="Loading posts…" />
             </div>
           ) : posts.length === 0 ? (
             <div className="feed-empty-state">
@@ -261,14 +284,34 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                           <Link className="text-link" to={`/posts/${post.id}/edit`}>
                             Edit post
                           </Link>
-                          <button
-                            className="action-link danger-link"
-                            type="button"
-                            onClick={() => handleDelete(post)}
-                            disabled={deletingPostId === post.id}
-                          >
-                            {deletingPostId === post.id ? "Deleting..." : "Delete post"}
-                          </button>
+                          {confirmDeleteId === post.id ? (
+                            <span className="confirm-delete-inline">
+                              <span className="confirm-delete-label">Delete this post?</span>
+                              <button
+                                className="btn-inline btn-inline-danger"
+                                type="button"
+                                onClick={() => handleDelete(post)}
+                              >
+                                Yes, delete
+                              </button>
+                              <button
+                                className="btn-inline btn-inline-cancel"
+                                type="button"
+                                onClick={() => setConfirmDeleteId(null)}
+                              >
+                                Cancel
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              className="action-link danger-link"
+                              type="button"
+                              onClick={() => setConfirmDeleteId(post.id)}
+                              disabled={deletingPostId === post.id}
+                            >
+                              {deletingPostId === post.id ? "Deleting…" : "Delete post"}
+                            </button>
+                          )}
                         </>
                       ) : user?.id === post.author.id ? (
                         <Link className="text-link" to="/my-posts">
@@ -276,10 +319,19 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                         </Link>
                       ) : (
                         <span className="helper compact">
-                          Vote to surface useful posts for the next reader.
+                          Vote and comment to surface useful posts for the next reader.
                         </span>
                       )}
                     </div>
+
+                    {!mineOnly && (
+                      <PostComments
+                        post={post}
+                        canComment={Boolean(user)}
+                        expandedByDefault={openCommentsByDefault}
+                        onCommentCreated={() => handleCommentCreated(post.id)}
+                      />
+                    )}
                   </div>
                 </article>
               ))}

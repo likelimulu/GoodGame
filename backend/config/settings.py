@@ -102,9 +102,9 @@ CORS_ALLOW_CREDENTIALS = True
 # Cross-origin cookie support — required when frontend and backend are on different domains.
 # SameSite=None lets the browser send session cookies on cross-origin fetch requests;
 # Secure=True is mandatory whenever SameSite=None is set (requires HTTPS in production).
-SESSION_COOKIE_SAMESITE = "None"
+# In local dev (DEBUG=True) the Vite proxy keeps everything same-origin, so Lax works fine.
+SESSION_COOKIE_SAMESITE = "Lax" if DEBUG else "None"
 SESSION_COOKIE_SECURE = not DEBUG
-
 
 # ── Media / Azure Blob Storage ────────────────────────────────────────────────
 

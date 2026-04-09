@@ -5,6 +5,11 @@ from GoodGame.models import GameHub
 
 HUBS = [
     "Super Smash Bros",
+    "League of Legends",
+    "Valorant",
+    "Minecraft",
+    "Elden Ring",
+    "Counter-Strike 2",
 ]
 
 

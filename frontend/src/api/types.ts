@@ -39,6 +39,16 @@ export interface Post {
   upvote_count: number;
   downvote_count: number;
   current_user_vote: number;
+  comment_count: number;
+}
+
+export interface PostComment {
+  id: number;
+  author: PostAuthor;
+  body: string;
+  attachment_name: string | null;
+  attachment_url: string | null;
+  created_at: string;
 }
 
 export interface ApiError {
