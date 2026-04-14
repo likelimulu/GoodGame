@@ -35,9 +35,9 @@ function getConfig(status: number): ErrorConfig {
     default:
       return {
         eyebrow: "Arcade Garage",
-        headline: "Server Down?",
-        subhead: "Something broke on our end — hang tight.",
-        helper: "Try refreshing or come back later.",
+        headline: "Skill Issue?",
+        subhead: "There's an error on our end — try reloading!",
+        helper: "We have run into an internal service error. Try again!",
       };
   }
 }
@@ -57,7 +57,7 @@ export default function ErrorPage({ status: statusProp }: { status?: number }) {
         </div>
         <div className="form-card">
           <p className="panel-tag">Game Hubs</p>
-          <p className="error-404">{status}</p>
+          <p className="error-code">{status}</p>
           <p className="helper">{config.helper}</p>
         </div>
       </div>

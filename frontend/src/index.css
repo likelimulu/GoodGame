@@ -922,7 +922,7 @@
 
   /* ── 404 page ───────────────────────────────────────────────────────── */
 
-  .error-404 {
+  .error-code {
     margin: 8px 0 16px;
     color: var(--color-gg-ink);
     font-family: var(--font-bungee);
