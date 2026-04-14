@@ -9,6 +9,8 @@ import SignupPage from "./pages/SignupPage";
 import CreatePostPage from "./pages/CreatePostPage";
 import EditPostPage from "./pages/EditPostPage";
 import PostsFeedPage from "./pages/PostsFeedPage";
+import NotFoundPage from "./pages/error/NotFoundPage";
+import ErrorPage from "./pages/error/ErrorPage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -51,7 +53,8 @@ function App() {
                   </RequireAuth>
                 }
               />
-              <Route path="*" element={<Navigate to="/posts" replace />} />
+              <Route path="/error/:status" element={<ErrorPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </BrowserRouter>
         </ToastProvider>
