@@ -22,7 +22,7 @@ function getConfig(status: number): ErrorConfig {
         eyebrow: "Arcade Garage",
         headline: "Off Limits",
         subhead: "You don't have permission to be here.",
-        helper: "Contact your team if you think this is a mistake.",
+        helper: "Contact our team if you think this is a mistake.",
       };
     case 404:
       return {
