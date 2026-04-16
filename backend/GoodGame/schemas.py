@@ -28,6 +28,11 @@ class AuthUserOut(Schema):
     id: int
     username: str
     email: str
+    role: str
+
+    @staticmethod
+    def resolve_role(obj):
+        return obj.profile.role
 
 
 class ErrorOut(Schema):
@@ -133,3 +138,13 @@ class PostVoteIn(Schema):
 
 class AvatarOut(Schema):
     url: str
+
+
+class UserRoleIn(Schema):
+    role: Literal["admin", "contributor", "developer", "moderator"]
+
+
+class UserRoleOut(Schema):
+    id: int
+    username: str
+    role: str

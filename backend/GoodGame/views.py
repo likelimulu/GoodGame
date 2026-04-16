@@ -9,7 +9,7 @@ from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum, Va
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 
-from .models import GameHub, Post, PostComment, PostVote, Tag
+from .models import GameHub, Post, PostComment, PostVote, Tag, UserProfile
 from .schemas import (
     AuthUserOut,
     AvatarOut,
@@ -25,6 +25,8 @@ from .schemas import (
     PostUpdateIn,
     SignupIn,
     SignupOut,
+    UserRoleIn,
+    UserRoleOut,
 )
 
 router = Router()
@@ -75,6 +77,19 @@ def me(request):
 
 
 # ── User profile endpoints ─────────────────────────────────────
+
+
+@router.put("/users/{user_id}/role", response={200: UserRoleOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
+def update_user_role(request, user_id: int, data: UserRoleIn):
+    """Change a user's role. Admin access required."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if request.user.profile.role != UserProfile.Role.ADMIN:
+        return 403, {"error": "Admin access required"}
+    user = get_object_or_404(User, id=user_id)
+    user.profile.role = data.role
+    user.profile.save()
+    return 200, {"id": user.id, "username": user.username, "role": user.profile.role}
 
 
 @router.put("/users/me/avatar", response={200: AvatarOut, 401: ErrorOut})
