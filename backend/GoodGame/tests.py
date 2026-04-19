@@ -5,7 +5,17 @@ from django.conf import settings
 from django.test import TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from .models import GameHub, ModeratorAccessRequest, Post, PostComment, PostVote, Tag, UserProfile
+from .models import (
+    GameHub,
+    ModeratorAccessRequest,
+    Post,
+    PostComment,
+    PostModerationAction,
+    PostModerationReport,
+    PostVote,
+    Tag,
+    UserProfile,
+)
 
 
 class AuthSessionApiTests(TestCase):
@@ -860,3 +870,214 @@ class PostCommentApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class PostModerationApiTests(TestCase):
+    def setUp(self):
+        self.author = User.objects.create_user(
+            username="author",
+            password="author-pass-123",
+            email="author@example.com",
+        )
+        self.reporter = User.objects.create_user(
+            username="reporter",
+            password="report-pass-123",
+            email="reporter@example.com",
+        )
+        self.moderator = User.objects.create_user(
+            username="moderator",
+            password="mod-pass-123",
+            email="moderator@example.com",
+        )
+        self.moderator.profile.role = UserProfile.Role.MODERATOR
+        self.moderator.profile.save()
+
+        self.admin_user = User.objects.create_user(
+            username="adminqueue",
+            password="admin-pass-123",
+            email="adminqueue@example.com",
+        )
+        self.admin_user.profile.role = UserProfile.Role.ADMIN
+        self.admin_user.profile.save()
+
+        self.hub = GameHub.objects.create(name="Mario Hub", slug="mario-hub")
+        self.post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Unmarked secret route guide",
+            body="This post reveals late-game shortcuts.",
+            status=Post.Status.PUBLISHED,
+            has_spoilers=True,
+        )
+
+    def _login(self, username, password):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    def test_report_post_requires_authentication(self):
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "Missing spoiler warning"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_authenticated_user_can_report_post(self):
+        self._login("reporter", "report-pass-123")
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "Missing spoiler warning"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["status"], PostModerationReport.Status.OPEN)
+        self.assertEqual(response.json()["reporter"]["username"], "reporter")
+        self.assertTrue(
+            PostModerationReport.objects.filter(post=self.post, reporter=self.reporter).exists()
+        )
+
+    def test_user_cannot_report_own_post(self):
+        self._login("author", "author-pass-123")
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "Trying to self-report"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "You cannot report your own post")
+
+    def test_duplicate_active_report_is_rejected(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Already reported",
+        )
+        self._login("reporter", "report-pass-123")
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "Still bad"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "You already have an active report for this post")
+
+    def test_queue_requires_moderation_access(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Missing spoiler warning",
+        )
+        self._login("reporter", "report-pass-123")
+
+        response = self.client.get("/api/moderation/queue")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "Moderator access required")
+
+    def test_moderator_can_view_flagged_queue(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Missing spoiler warning",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.get("/api/moderation/queue")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]["id"], self.post.id)
+        self.assertEqual(response.json()[0]["report_count"], 1)
+        self.assertEqual(response.json()[0]["latest_report_reason"], "Missing spoiler warning")
+
+    def test_warn_action_resolves_open_reports(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Missing spoiler warning",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "warn", "note": "Added moderator warning"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
+        self.post.refresh_from_db()
+        self.assertEqual(report.status, PostModerationReport.Status.ACTIONED)
+        self.assertEqual(self.post.status, Post.Status.PUBLISHED)
+        self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.WARN)
+
+    def test_escalate_action_marks_reports_escalated(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Repeat bait title",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "escalate", "note": "Needs admin review"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
+        self.assertEqual(report.status, PostModerationReport.Status.ESCALATED)
+        self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.ESCALATE)
+
+    def test_remove_action_soft_deletes_post(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Spam repost",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "remove", "note": "Removed from public feed"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
+        self.post.refresh_from_db()
+        self.assertEqual(report.status, PostModerationReport.Status.ACTIONED)
+        self.assertEqual(self.post.status, Post.Status.DELETED)
+        self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.REMOVE)
+
+    def test_dismiss_action_clears_report_without_deleting_post(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="False alarm",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "dismiss", "note": "No issue found"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
+        self.post.refresh_from_db()
+        self.assertEqual(report.status, PostModerationReport.Status.DISMISSED)
+        self.assertEqual(self.post.status, Post.Status.PUBLISHED)
+        self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.DISMISS)

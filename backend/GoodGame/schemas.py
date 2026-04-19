@@ -133,6 +133,55 @@ class PostVoteIn(Schema):
     value: Literal[-1, 0, 1]
 
 
+class PostReportCreateIn(Schema):
+    reason: str
+
+
+class PostReportAuthorOut(Schema):
+    id: int
+    username: str
+
+
+class PostModerationReportOut(Schema):
+    id: int
+    post_id: int
+    reporter: PostReportAuthorOut
+    reason: str
+    status: str
+    reviewed_at: Optional[datetime] = None
+    reviewed_by_username: Optional[str] = None
+    created_at: datetime
+
+    @staticmethod
+    def resolve_reviewed_by_username(obj):
+        return obj.reviewed_by.username if obj.reviewed_by else None
+
+
+class PostModerationActionIn(Schema):
+    action: Literal["warn", "remove", "escalate", "dismiss"]
+    note: str = ""
+
+
+class ModerationQueueItemOut(Schema):
+    id: int
+    game_hub: GameHubOut
+    author: PostAuthorOut
+    title: str
+    body: str
+    tags: List[TagOut]
+    is_question: bool
+    has_spoilers: bool
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    report_count: int
+    latest_report_reason: Optional[str] = None
+    latest_reported_at: Optional[datetime] = None
+    latest_action: Optional[str] = None
+    latest_action_note: Optional[str] = None
+    latest_action_at: Optional[datetime] = None
+
+
 # ── User profile schemas ───────────────────────────────────────────────────────
 
 
