@@ -1,7 +1,10 @@
+export type UserRole = "admin" | "contributor" | "developer" | "moderator";
+
 export interface AuthUser {
   id: number;
   username: string;
   email: string;
+  role: UserRole;
 }
 
 export interface GameHub {
@@ -64,4 +67,15 @@ export interface PostVoteSummary {
   upvote_count: number;
   downvote_count: number;
   current_user_vote: number;
+}
+
+export interface ModeratorAccessRequest {
+  id: number;
+  user: AuthUser;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  review_note: string;
+  requested_at: string;
+  reviewed_at: string | null;
+  reviewed_by_username: string | null;
 }
