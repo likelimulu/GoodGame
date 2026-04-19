@@ -800,6 +800,81 @@
     color: #7a5a12;
   }
 
+  .moderator-pill-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .queue-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .queue-status-open {
+    background: #fff2bf;
+    border-color: #d8bf88;
+    color: #7a5a12;
+  }
+
+  .queue-status-escalated {
+    background: #ffe0db;
+    border-color: #e99b8f;
+    color: #8b3121;
+  }
+
+  .queue-status-actioned {
+    background: #dff7db;
+    border-color: #8ecb86;
+    color: #245c20;
+  }
+
+  .queue-status-dismissed {
+    background: #e8f6ff;
+    border-color: #a6d6f1;
+    color: #1b4d70;
+  }
+
+  .moderator-report-meta {
+    display: grid;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(54, 66, 76, 0.06);
+  }
+
+  .moderator-report-copy {
+    margin: 0;
+    color: var(--color-gg-ink);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .moderation-note-field {
+    gap: 8px;
+  }
+
+  .moderation-note-field textarea {
+    min-height: 104px;
+    font-size: 20px;
+  }
+
+  .moderation-action-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
   .moderator-limit-list {
     display: grid;
     gap: 10px;

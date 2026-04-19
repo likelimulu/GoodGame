@@ -3,36 +3,78 @@ import { Link } from "react-router-dom";
 import Layout from "../components/Layout";
 import Spinner from "../components/Spinner";
 import { api } from "../api/client";
-import type { ApiError, Post } from "../api/types";
+import type {
+  ApiError,
+  ModerationActionType,
+  ModerationQueueItem,
+  ModerationReportStatus,
+} from "../api/types";
+import { useToast } from "../context/ToastContext";
 
-function sortRecentPosts(posts: Post[]) {
-  return [...posts].sort(
-    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-  );
+type QueueFilter = ModerationReportStatus | "all";
+
+const FILTER_OPTIONS: Array<{ value: QueueFilter; label: string }> = [
+  { value: "open", label: "Open" },
+  { value: "escalated", label: "Escalated" },
+  { value: "actioned", label: "Actioned" },
+  { value: "dismissed", label: "Dismissed" },
+  { value: "all", label: "All" },
+];
+
+const ACTION_LABELS: Record<ModerationActionType, string> = {
+  warn: "Warn Author",
+  remove: "Remove Post",
+  escalate: "Escalate",
+  dismiss: "Dismiss Report",
+};
+
+function formatDate(value: string | null) {
+  if (!value) return "No timestamp yet";
+  return new Date(value).toLocaleString();
+}
+
+function isActionable(status: ModerationReportStatus) {
+  return status === "open" || status === "escalated";
+}
+
+function getQueueStatusClass(status: ModerationReportStatus) {
+  return `queue-status queue-status-${status}`;
+}
+
+function getActionToast(action: ModerationActionType) {
+  if (action === "warn") return "Author warned and report resolved";
+  if (action === "remove") return "Post removed from the public feed";
+  if (action === "escalate") return "Post escalated for higher-level review";
+  return "Report dismissed";
 }
 
 export default function ModeratorWorkspacePage() {
-  const [posts, setPosts] = useState<Post[]>([]);
+  const { addToast } = useToast();
+  const [filter, setFilter] = useState<QueueFilter>("open");
+  const [items, setItems] = useState<ModerationQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busyPostId, setBusyPostId] = useState<number | null>(null);
+  const [actionNotes, setActionNotes] = useState<Record<number, string>>({});
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    const query = filter === "all" ? "/moderation/queue?status=all" : `/moderation/queue?status=${filter}`;
 
     api
-      .get<Post[] | ApiError>("/posts", controller.signal)
+      .get<ModerationQueueItem[] | ApiError>(query, controller.signal)
       .then(({ status, data }) => {
         if (cancelled) return;
         if (status === 200 && Array.isArray(data)) {
-          setPosts(sortRecentPosts(data));
+          setItems(data);
           return;
         }
-        setError((data as ApiError).error ?? "Failed to load moderator workspace");
+        setError((data as ApiError).error ?? "Failed to load moderation queue");
       })
       .catch((err) => {
         if (!cancelled && err.name !== "AbortError") {
-          setError("Failed to load moderator workspace");
+          setError("Failed to load moderation queue");
         }
       })
       .finally(() => {
@@ -43,57 +85,101 @@ export default function ModeratorWorkspacePage() {
       cancelled = true;
       controller.abort();
     };
-  }, []);
+  }, [filter]);
 
   const summary = useMemo(() => {
-    const spoilerCount = posts.filter((post) => post.has_spoilers).length;
-    const questionCount = posts.filter((post) => post.is_question).length;
-    const activeDiscussionCount = posts.filter((post) => post.comment_count >= 2).length;
-    const heavyVoteCount = posts.filter((post) => Math.abs(post.vote_score) >= 2).length;
+    const escalatedCount = items.filter((item) => item.report_status === "escalated").length;
+    const repeatedCount = items.filter((item) => item.report_count >= 2).length;
+    const spoilerCount = items.filter((item) => item.has_spoilers).length;
+    const removedCount = items.filter(
+      (item) => item.status === "deleted" || item.latest_action === "remove"
+    ).length;
 
     return {
-      total: posts.length,
+      total: items.length,
+      escalated: escalatedCount,
+      repeated: repeatedCount,
       spoilers: spoilerCount,
-      questions: questionCount,
-      active: activeDiscussionCount,
-      heavyVotes: heavyVoteCount,
+      removed: removedCount,
     };
-  }, [posts]);
+  }, [items]);
 
-  const reviewQueue = useMemo(() => posts.slice(0, 5), [posts]);
+  async function handleAction(item: ModerationQueueItem, action: ModerationActionType) {
+    setBusyPostId(item.id);
+    setError(null);
+
+    const { status, data } = await api.post<ModerationQueueItem | ApiError>(
+      `/moderation/posts/${item.id}/actions`,
+      {
+        action,
+        note: actionNotes[item.id]?.trim() ?? "",
+      }
+    );
+
+    setBusyPostId(null);
+
+    if (status === 200) {
+      const updatedItem = data as ModerationQueueItem;
+      setItems((current) => {
+        if (filter !== "all" && updatedItem.report_status !== filter) {
+          return current.filter((entry) => entry.id !== item.id);
+        }
+        return current.map((entry) => (entry.id === item.id ? updatedItem : entry));
+      });
+      setActionNotes((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+      addToast(getActionToast(action), "success");
+      return;
+    }
+
+    const message = (data as ApiError).error ?? "Failed to apply moderation action";
+    setError(message);
+    addToast(message, "error");
+  }
+
+  function handleFilterChange(nextFilter: QueueFilter) {
+    if (nextFilter === filter) return;
+    setLoading(true);
+    setError(null);
+    setFilter(nextFilter);
+  }
 
   return (
     <Layout>
       <main className="page-grid moderator-grid">
         <section className="hero-card">
           <span className="eyebrow">Control Room</span>
-          <h1 className="headline">Moderator Home</h1>
+          <h1 className="headline">Moderator Queue</h1>
           <p className="subhead">
-            Separate workspace for queue review, content checks, and moderator guidance.
+            Separate workspace for flagged threads, moderation decisions, and queue triage.
           </p>
 
           <div className="feed-sidebar-stack">
             <p className="helper moderator-hero-copy">
-              The moderation workflow is kept outside the regular user feed. This workspace
-              surfaces recent public content until reporting and flagging APIs are added.
+              The moderation workflow stays outside the regular user feed. Reported content
+              lands here first, and moderators can warn, remove, dismiss, or escalate without
+              exposing moderation controls to normal users.
             </p>
 
             <div className="moderator-summary-grid">
               <article className="moderator-summary-card">
-                <span className="panel-tag">Published Threads</span>
+                <span className="panel-tag">Visible Queue</span>
                 <p className="moderator-summary-value">{summary.total}</p>
               </article>
               <article className="moderator-summary-card">
-                <span className="panel-tag">Spoiler Tagged</span>
-                <p className="moderator-summary-value">{summary.spoilers}</p>
+                <span className="panel-tag">Escalated</span>
+                <p className="moderator-summary-value">{summary.escalated}</p>
               </article>
               <article className="moderator-summary-card">
-                <span className="panel-tag">Question Posts</span>
-                <p className="moderator-summary-value">{summary.questions}</p>
+                <span className="panel-tag">Repeat Reports</span>
+                <p className="moderator-summary-value">{summary.repeated}</p>
               </article>
               <article className="moderator-summary-card">
-                <span className="panel-tag">Active Discussions</span>
-                <p className="moderator-summary-value">{summary.active}</p>
+                <span className="panel-tag">Removed</span>
+                <p className="moderator-summary-value">{summary.removed}</p>
               </article>
             </div>
           </div>
@@ -101,128 +187,200 @@ export default function ModeratorWorkspacePage() {
 
         <section className="form-card feed-card">
           <p className="panel-tag">Moderator Workspace</p>
-          <h2 className="section-title">Review Queue</h2>
+          <h2 className="section-title">Flagged Content Queue</h2>
           <p className="helper">
-            This page gives moderators a separate place to review active content without
-            adding moderator navigation to the public user flow.
+            Filter by queue state, review the report context, then take the moderation action
+            directly from this page.
           </p>
+
+          <div className="filter-row">
+            {FILTER_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                className={`btn ${filter === option.value ? "secondary" : "ghost"}`}
+                type="button"
+                onClick={() => handleFilterChange(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
 
           {error && <p className="form-error">{error}</p>}
 
           {loading ? (
             <div className="feed-empty-state">
-              <Spinner text="Loading moderator workspace…" />
+              <Spinner text="Loading moderation queue…" />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="feed-empty-state">
+              <h3 className="empty-title">Queue Clear</h3>
+              <p className="helper">
+                There are no posts in the {filter} queue right now.
+              </p>
             </div>
           ) : (
-            <>
-              <div className="moderator-card-grid">
-                <section className="moderator-panel">
-                  <div className="moderator-panel-head">
-                    <div>
-                      <h3 className="moderator-panel-title">Recent Threads For Review</h3>
-                      <p className="helper">
-                        Newest posts surface first so moderators can quickly scan public
-                        content for spoilers, spam, or low-quality reposts.
-                      </p>
-                    </div>
-                    <span className="pill moderator-pill">
-                      {summary.heavyVotes} high-signal
-                    </span>
-                  </div>
-
-                  {reviewQueue.length === 0 ? (
+            <div className="moderator-card-grid">
+              <section className="moderator-panel">
+                <div className="moderator-panel-head">
+                  <div>
+                    <h3 className="moderator-panel-title">Reported Posts</h3>
                     <p className="helper">
-                      No published posts are available right now. New public threads will show
-                      up here once users post to the feed.
+                      Queue items are ordered by the newest report activity so urgent issues
+                      stay near the top.
                     </p>
-                  ) : (
-                    <div className="moderator-list">
-                      {reviewQueue.map((post) => (
-                        <article className="moderator-item" key={post.id}>
-                          <div className="moderator-item-head">
-                            <div>
-                              <h4 className="moderator-item-title">{post.title}</h4>
-                              <div className="moderator-item-meta">
-                                <span>{post.game_hub.name}</span>
-                                <span>by {post.author.username}</span>
-                                <span>{new Date(post.updated_at).toLocaleDateString()}</span>
-                              </div>
+                  </div>
+                  <span className="pill moderator-pill">{items.length} visible</span>
+                </div>
+
+                <div className="moderator-list">
+                  {items.map((item) => {
+                    const busy = busyPostId === item.id;
+                    const note = actionNotes[item.id] ?? "";
+                    const actionable = isActionable(item.report_status);
+                    return (
+                      <article className="moderator-item" key={item.id}>
+                        <div className="moderator-item-head">
+                          <div>
+                            <h4 className="moderator-item-title">{item.title}</h4>
+                            <div className="moderator-item-meta">
+                              <span>{item.game_hub.name}</span>
+                              <span>by {item.author.username}</span>
+                              <span>Updated {formatDate(item.updated_at)}</span>
                             </div>
+                          </div>
+
+                          <div className="moderator-pill-stack">
+                            <span className={getQueueStatusClass(item.report_status)}>
+                              {item.report_status}
+                            </span>
                             <span className="pill moderator-score-pill">
-                              score {post.vote_score}
+                              {item.report_count} reports
                             </span>
                           </div>
+                        </div>
 
-                          <p className="moderator-item-copy">{post.body}</p>
+                        <p className="moderator-item-copy">{item.body}</p>
 
-                          <div className="post-badges">
-                            {post.is_question && (
-                              <span className="pill pill-question">Question</span>
-                            )}
-                            {post.has_spoilers && (
-                              <span className="pill pill-warning">Spoilers</span>
-                            )}
-                            {post.tags.map((tag) => (
-                              <span className="tag" key={tag.id}>
-                                {tag.name}
-                              </span>
-                            ))}
-                          </div>
+                        <div className="post-badges">
+                          {item.is_question && <span className="pill pill-question">Question</span>}
+                          {item.has_spoilers && <span className="pill pill-warning">Spoilers</span>}
+                          {item.tags.map((tag) => (
+                            <span className="tag" key={tag.id}>
+                              {tag.name}
+                            </span>
+                          ))}
+                        </div>
 
+                        <div className="moderator-report-meta">
+                          <p className="moderator-report-copy">
+                            Latest report: {item.latest_report_reason ?? "No reason recorded."}
+                          </p>
+                          <p className="helper">
+                            Reported {formatDate(item.latest_reported_at)}
+                          </p>
+                          {item.latest_action ? (
+                            <p className="helper">
+                              Latest action: {item.latest_action}{" "}
+                              {item.latest_action_at ? `· ${formatDate(item.latest_action_at)}` : ""}
+                            </p>
+                          ) : null}
+                          {item.latest_action_note ? (
+                            <p className="helper">Last note: {item.latest_action_note}</p>
+                          ) : null}
+                        </div>
+
+                        {actionable ? (
+                          <>
+                            <div className="field moderation-note-field">
+                              <label htmlFor={`moderation-note-${item.id}`}>Moderator Note</label>
+                              <textarea
+                                id={`moderation-note-${item.id}`}
+                                rows={3}
+                                placeholder="Internal note for the moderation record"
+                                value={note}
+                                onChange={(event) =>
+                                  setActionNotes((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value,
+                                  }))
+                                }
+                              />
+                            </div>
+
+                            <div className="moderation-action-grid">
+                              {(["warn", "remove", "escalate", "dismiss"] as ModerationActionType[]).map(
+                                (action) => (
+                                  <button
+                                    key={action}
+                                    className={`btn ${action === "remove" ? "ghost" : "secondary"}`}
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => handleAction(item, action)}
+                                  >
+                                    {busy ? "Saving…" : ACTION_LABELS[action]}
+                                  </button>
+                                )
+                              )}
+                              <Link className="btn ghost" to="/posts">
+                                Open Community Feed
+                              </Link>
+                            </div>
+                          </>
+                        ) : (
                           <div className="moderator-action-row">
                             <span className="helper">
-                              {post.comment_count} comments · {post.upvote_count} upvotes ·{" "}
-                              {post.downvote_count} downvotes
+                              This item is already {item.report_status}. Use the queue filter to
+                              focus on unresolved reports.
                             </span>
                             <Link className="btn ghost" to="/posts">
                               Open Community Feed
                             </Link>
                           </div>
-                        </article>
-                      ))}
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <div className="moderator-side-column">
+                <section className="moderator-panel">
+                  <div className="moderator-panel-head">
+                    <div>
+                      <h3 className="moderator-panel-title">Action Guide</h3>
+                      <p className="helper">
+                        Keep action semantics visible so the queue stays consistent across mods.
+                      </p>
                     </div>
-                  )}
+                  </div>
+
+                  <ul className="rule-list">
+                    <li>Warn keeps the post live and resolves the current report set.</li>
+                    <li>Remove soft-deletes the post and clears the active report queue.</li>
+                    <li>Escalate keeps the item visible for higher-level moderation review.</li>
+                    <li>Dismiss closes the report without changing the underlying post.</li>
+                  </ul>
                 </section>
 
-                <div className="moderator-side-column">
-                  <section className="moderator-panel">
-                    <div className="moderator-panel-head">
-                      <div>
-                        <h3 className="moderator-panel-title">Quick Rules</h3>
-                        <p className="helper">
-                          Keep the moderation standards visible until full tooling is ready.
-                        </p>
-                      </div>
+                <section className="moderator-panel">
+                  <div className="moderator-panel-head">
+                    <div>
+                      <h3 className="moderator-panel-title">Queue Notes</h3>
+                      <p className="helper">
+                        These are the live moderation signals coming from reported content.
+                      </p>
                     </div>
+                  </div>
 
-                    <ul className="rule-list">
-                      <li>Check spoiler-tag coverage before a guide or strategy thread stays live.</li>
-                      <li>Watch for repeated reposts that only change the title to stay visible.</li>
-                      <li>Use the community feed to inspect context before taking a moderation action.</li>
-                      <li>Escalate anything that needs admin role changes or policy-level review.</li>
-                    </ul>
-                  </section>
-
-                  <section className="moderator-panel">
-                    <div className="moderator-panel-head">
-                      <div>
-                        <h3 className="moderator-panel-title">Current Limits</h3>
-                        <p className="helper">
-                          This workspace is intentionally separate, but the deeper moderation
-                          APIs still need to be built.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="moderator-limit-list">
-                      <p className="helper">No flag queue endpoint yet</p>
-                      <p className="helper">No direct post removal action in the moderator UI yet</p>
-                      <p className="helper">Admin approval stays on the admin queue page</p>
-                    </div>
-                  </section>
-                </div>
+                  <div className="moderator-limit-list">
+                    <p className="helper">Spoiler-tagged posts in view: {summary.spoilers}</p>
+                    <p className="helper">Escalated items require follow-up by senior staff.</p>
+                    <p className="helper">Admin role approvals stay on the admin request page.</p>
+                  </div>
+                </section>
               </div>
-            </>
+            </div>
           )}
         </section>
       </main>
