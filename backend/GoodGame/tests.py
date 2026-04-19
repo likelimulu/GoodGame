@@ -5,7 +5,7 @@ from django.conf import settings
 from django.test import TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from .models import GameHub, Post, PostComment, PostVote, Tag
+from .models import GameHub, ModeratorAccessRequest, Post, PostComment, PostVote, Tag, UserProfile
 
 
 class AuthSessionApiTests(TestCase):
@@ -27,6 +27,7 @@ class AuthSessionApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["username"], self.username)
+        self.assertEqual(response.json()["role"], UserProfile.Role.CONTRIBUTOR)
         self.assertEqual(str(self.client.session.get("_auth_user_id")), str(self.user.id))
         self.assertTrue(self.client.session.get_expire_at_browser_close())
 
@@ -81,6 +82,18 @@ class AuthSessionApiTests(TestCase):
         me_response = self.client.get("/api/auth/me")
         self.assertEqual(me_response.status_code, 401)
 
+    def test_me_returns_role(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": self.username, "password": self.password}),
+            content_type="application/json",
+        )
+
+        response = self.client.get("/api/auth/me")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["role"], UserProfile.Role.CONTRIBUTOR)
+
 
 class SignupApiTests(TestCase):
     def test_signup_creates_user(self):
@@ -96,6 +109,10 @@ class SignupApiTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["username"], "newplayer")
         self.assertTrue(User.objects.filter(username="newplayer").exists())
+        self.assertEqual(
+            User.objects.get(username="newplayer").profile.role,
+            UserProfile.Role.CONTRIBUTOR,
+        )
 
     def test_signup_duplicate_username(self):
         User.objects.create_user(username="taken", password="pass", email="a@b.com")
@@ -109,6 +126,192 @@ class SignupApiTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 409)
+
+
+class UserRoleApiTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username="adminuser",
+            password="admin-pass-123",
+            email="admin@example.com",
+        )
+        self.admin_user.profile.role = UserProfile.Role.ADMIN
+        self.admin_user.profile.save()
+
+        self.target_user = User.objects.create_user(
+            username="targetuser",
+            password="target-pass-123",
+            email="target@example.com",
+        )
+
+    def test_update_user_role_requires_authentication(self):
+        response = self.client.put(
+            f"/api/users/{self.target_user.id}/role",
+            data=json.dumps({"role": UserProfile.Role.MODERATOR}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_update_user_role_requires_admin(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "targetuser", "password": "target-pass-123"}),
+            content_type="application/json",
+        )
+
+        response = self.client.put(
+            f"/api/users/{self.target_user.id}/role",
+            data=json.dumps({"role": UserProfile.Role.MODERATOR}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "Admin access required")
+
+    def test_admin_can_update_user_role(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "adminuser", "password": "admin-pass-123"}),
+            content_type="application/json",
+        )
+
+        response = self.client.put(
+            f"/api/users/{self.target_user.id}/role",
+            data=json.dumps({"role": UserProfile.Role.MODERATOR}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.target_user.refresh_from_db()
+        self.target_user.profile.refresh_from_db()
+        self.assertEqual(self.target_user.profile.role, UserProfile.Role.MODERATOR)
+        self.assertEqual(response.json()["role"], UserProfile.Role.MODERATOR)
+
+
+class ModeratorAccessRequestApiTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username="adminmod",
+            password="admin-pass-123",
+            email="adminmod@example.com",
+        )
+        self.admin_user.profile.role = UserProfile.Role.ADMIN
+        self.admin_user.profile.save()
+
+        self.request_user = User.objects.create_user(
+            username="requester",
+            password="request-pass-123",
+            email="requester@example.com",
+        )
+
+    def _login(self, username, password):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    def test_create_moderator_request_requires_authentication(self):
+        response = self.client.post(
+            "/api/users/me/moderator-request",
+            data=json.dumps({"reason": "I help review strategy threads"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_create_moderator_request_creates_pending_request(self):
+        self._login("requester", "request-pass-123")
+
+        response = self.client.post(
+            "/api/users/me/moderator-request",
+            data=json.dumps({"reason": "I help review strategy threads"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["status"], ModeratorAccessRequest.Status.PENDING)
+        self.assertEqual(response.json()["user"]["username"], "requester")
+        self.assertEqual(response.json()["user"]["role"], UserProfile.Role.CONTRIBUTOR)
+        self.assertTrue(ModeratorAccessRequest.objects.filter(user=self.request_user).exists())
+
+    def test_create_moderator_request_conflicts_when_pending_exists(self):
+        ModeratorAccessRequest.objects.create(user=self.request_user, reason="First request")
+        self._login("requester", "request-pass-123")
+
+        response = self.client.post(
+            "/api/users/me/moderator-request",
+            data=json.dumps({"reason": "Second request"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "Moderator request already pending")
+
+    def test_non_admin_cannot_list_requests(self):
+        self._login("requester", "request-pass-123")
+
+        response = self.client.get("/api/moderator-requests")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "Admin access required")
+
+    def test_admin_can_list_requests(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user,
+            reason="I can help moderate spoiler-heavy threads",
+        )
+        self._login("adminmod", "admin-pass-123")
+
+        response = self.client.get("/api/moderator-requests")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]["id"], request_record.id)
+        self.assertEqual(response.json()[0]["user"]["username"], "requester")
+
+    def test_admin_can_approve_request_and_promote_user(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user,
+            reason="I can help moderate spoiler-heavy threads",
+        )
+        self._login("adminmod", "admin-pass-123")
+
+        response = self.client.put(
+            f"/api/moderator-requests/{request_record.id}",
+            data=json.dumps({"status": "approved", "review_note": "Approved for Sprint 6 moderation queue"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_record.refresh_from_db()
+        self.request_user.refresh_from_db()
+        self.request_user.profile.refresh_from_db()
+        self.assertEqual(request_record.status, ModeratorAccessRequest.Status.APPROVED)
+        self.assertEqual(request_record.reviewed_by_id, self.admin_user.id)
+        self.assertEqual(self.request_user.profile.role, UserProfile.Role.MODERATOR)
+        self.assertEqual(response.json()["status"], ModeratorAccessRequest.Status.APPROVED)
+        self.assertEqual(response.json()["reviewed_by_username"], "adminmod")
+
+    def test_admin_can_reject_request_without_role_change(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user,
+            reason="I can help moderate spoiler-heavy threads",
+        )
+        self._login("adminmod", "admin-pass-123")
+
+        response = self.client.put(
+            f"/api/moderator-requests/{request_record.id}",
+            data=json.dumps({"status": "rejected", "review_note": "Need more activity first"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_record.refresh_from_db()
+        self.request_user.profile.refresh_from_db()
+        self.assertEqual(request_record.status, ModeratorAccessRequest.Status.REJECTED)
+        self.assertEqual(self.request_user.profile.role, UserProfile.Role.CONTRIBUTOR)
 
 
 class GameHubApiTests(TestCase):
