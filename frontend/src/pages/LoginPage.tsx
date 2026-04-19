@@ -4,6 +4,12 @@ import Layout from "../components/Layout";
 import { useAuth } from "../context/useAuth";
 import { useToast } from "../context/ToastContext";
 
+function getLandingPath(role: string) {
+  if (role === "admin") return "/admin/moderator-requests";
+  if (role === "moderator") return "/moderator";
+  return "/posts";
+}
+
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -29,7 +35,7 @@ export default function LoginPage() {
       addToast(result.error, "error");
     } else {
       addToast("Welcome back!", "success");
-      navigate("/posts");
+      navigate(getLandingPath(result.user?.role ?? "contributor"));
     }
   }
 

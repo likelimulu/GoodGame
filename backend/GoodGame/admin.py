@@ -1,11 +1,18 @@
 from django.contrib import admin
 
-from .models import GameHub, Post, PostVote, Tag, UserProfile
+from .models import GameHub, ModeratorAccessRequest, Post, PostVote, Tag, UserProfile
 
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "reputation_score")
+    list_display = ("user", "role", "reputation_score")
+
+
+@admin.register(ModeratorAccessRequest)
+class ModeratorAccessRequestAdmin(admin.ModelAdmin):
+    list_display = ("user", "status", "requested_at", "reviewed_at", "reviewed_by")
+    list_filter = ("status",)
+    search_fields = ("user__username", "user__email", "reason", "review_note")
 
 
 @admin.register(GameHub)
