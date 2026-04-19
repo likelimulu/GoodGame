@@ -9,7 +9,7 @@ from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum, Va
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 
-from .models import GameHub, Post, PostComment, PostVote, Tag
+from .models import GameHub, Post, PostComment, PostVote, Tag, UserProfile
 from .schemas import (
     AuthUserOut,
     AvatarOut,
@@ -25,6 +25,8 @@ from .schemas import (
     PostUpdateIn,
     SignupIn,
     SignupOut,
+    UserRoleIn,
+    UserRoleOut,
 )
 
 router = Router()
@@ -75,6 +77,20 @@ def me(request):
 
 
 # ── User profile endpoints ─────────────────────────────────────
+
+
+@router.put("/users/{user_id}/role", response={200: UserRoleOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
+def update_user_role(request, user_id: int, data: UserRoleIn):
+    """Change a user's role. Admin access required."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if request.user.profile.role != UserProfile.Role.ADMIN:
+        return 403, {"error": "Admin access required"}
+
+    user = get_object_or_404(User, id=user_id)
+    user.profile.role = data.role
+    user.profile.save()
+    return 200, {"id": user.id, "username": user.username, "role": user.profile.role}
 
 
 @router.put("/users/me/avatar", response={200: AvatarOut, 401: ErrorOut})
@@ -180,12 +196,7 @@ def _absolute_file_url(request, field_file):
         return None
 
     file_url = field_file.url
-    # Already an absolute URL (e.g. Azure Blob Storage) — return as-is.
     if file_url.startswith("http://") or file_url.startswith("https://"):
-        return file_url
-    # In local dev the Vite proxy handles /media, so a relative path works
-    # and avoids returning the Docker-internal hostname (e.g. api:8000).
-    if settings.DEBUG:
         return file_url
     return request.build_absolute_uri(file_url)
 

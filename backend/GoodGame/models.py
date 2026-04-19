@@ -3,11 +3,18 @@ from django.contrib.auth.models import User
 
 
 class UserProfile(models.Model):
+    class Role(models.TextChoices):
+        ADMIN = "admin", "Admin"
+        CONTRIBUTOR = "contributor", "Contributor"
+        DEVELOPER = "developer", "Developer"
+        MODERATOR = "moderator", "Moderator"
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     name = models.CharField(max_length=100, blank=True)
     phone_number = models.CharField(max_length=20, blank=True)
     profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True)
     reputation_score = models.IntegerField(default=0)
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.CONTRIBUTOR)
 
     def __str__(self):
         return f"{self.user.username} profile"
