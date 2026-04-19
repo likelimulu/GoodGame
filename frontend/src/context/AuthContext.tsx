@@ -16,7 +16,7 @@ interface AuthContextValue {
     username: string,
     password: string,
     rememberMe: boolean
-  ) => Promise<{ error?: string }>;
+  ) => Promise<{ error?: string; user?: AuthUser }>;
   signup: (
     username: string,
     email: string,
@@ -61,8 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       );
       if (status === 200) {
-        setUser(data as AuthUser);
-        return {};
+        const authUser = data as AuthUser;
+        setUser(authUser);
+        return { user: authUser };
       }
       return { error: (data as ApiError).error };
     },

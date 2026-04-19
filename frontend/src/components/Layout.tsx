@@ -22,8 +22,44 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isFeed = pathname === "/posts";
   const isMyPosts = pathname === "/my-posts";
   const isAdminQueue = pathname === "/admin/moderator-requests";
+  const isModeratorWorkspace = pathname === "/moderator";
   const isPostStudio =
     pathname === "/posts/create" || pathname.startsWith("/posts/") && pathname !== "/posts";
+
+  if (isModeratorWorkspace && user?.role === "moderator") {
+    return (
+      <div className="app-shell">
+        <header className="topbar">
+          <div>
+            <h1 className="brand">
+              <Link className="brand-link" to="/moderator">
+                GoodGame Moderation
+              </Link>
+            </h1>
+            <p className="topbar-copy">
+              Separate moderator workspace for review queues and moderation guidance.
+            </p>
+          </div>
+          <nav className="nav" aria-label="Moderator workspace">
+            <Link className="active" to="/moderator">
+              Queue
+            </Link>
+            <Link to="/posts">Community Feed</Link>
+            <button
+              className="nav-button"
+              type="button"
+              onClick={() => {
+                logout();
+              }}
+            >
+              Sign Out
+            </button>
+          </nav>
+        </header>
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -63,6 +99,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </button>
               {dropdownOpen && (
                 <div className="nav-dropdown">
+                  {user.role === "moderator" && (
+                    <Link
+                      className={`nav-dropdown-item ${isModeratorWorkspace ? "active" : ""}`}
+                      to="/moderator"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      Moderator Workspace
+                    </Link>
+                  )}
                   {user.role === "admin" && (
                     <Link
                       className={`nav-dropdown-item ${isAdminQueue ? "active" : ""}`}
