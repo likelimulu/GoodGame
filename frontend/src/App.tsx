@@ -9,11 +9,29 @@ import SignupPage from "./pages/SignupPage";
 import CreatePostPage from "./pages/CreatePostPage";
 import EditPostPage from "./pages/EditPostPage";
 import PostsFeedPage from "./pages/PostsFeedPage";
+import AdminModeratorRequestsPage from "./pages/AdminModeratorRequestsPage";
+import ModeratorWorkspacePage from "./pages/ModeratorWorkspacePage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== "admin") return <Navigate to="/posts" replace />;
+  return <>{children}</>;
+}
+
+function RequireModerator({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== "moderator") return <Navigate to="/posts" replace />;
   return <>{children}</>;
 }
 
@@ -49,6 +67,22 @@ function App() {
                   <RequireAuth>
                     <EditPostPage />
                   </RequireAuth>
+                }
+              />
+              <Route
+                path="/admin/moderator-requests"
+                element={
+                  <RequireAdmin>
+                    <AdminModeratorRequestsPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/moderator"
+                element={
+                  <RequireModerator>
+                    <ModeratorWorkspacePage />
+                  </RequireModerator>
                 }
               />
               <Route path="*" element={<Navigate to="/posts" replace />} />

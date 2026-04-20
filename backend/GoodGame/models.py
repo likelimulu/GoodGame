@@ -3,14 +3,57 @@ from django.contrib.auth.models import User
 
 
 class UserProfile(models.Model):
+    class Role(models.TextChoices):
+        ADMIN = "admin", "Admin"
+        CONTRIBUTOR = "contributor", "Contributor"
+        DEVELOPER = "developer", "Developer"
+        MODERATOR = "moderator", "Moderator"
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     name = models.CharField(max_length=100, blank=True)
     phone_number = models.CharField(max_length=20, blank=True)
     profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True)
     reputation_score = models.IntegerField(default=0)
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.CONTRIBUTOR)
 
     def __str__(self):
         return f"{self.user.username} profile"
+
+
+class ModeratorAccessRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="moderator_access_request",
+    )
+    reason = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    review_note = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_moderator_requests",
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        return f"{self.user.username} moderator request ({self.status})"
 
 
 class GameHub(models.Model):
