@@ -1,15 +1,26 @@
-from typing import List
+from typing import List, Optional
 
 from ninja import File, Form, Router
 from ninja.files import UploadedFile
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from django.conf import settings
-from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import CharField, Count, DateTimeField, IntegerField, OuterRef, Q, Subquery, Sum, TextField, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
-from .models import GameHub, Post, PostComment, PostVote, Tag
+from .models import (
+    GameHub,
+    ModeratorAccessRequest,
+    Post,
+    PostComment,
+    PostModerationAction,
+    PostModerationReport,
+    PostVote,
+    Tag,
+    UserProfile,
+)
 from .schemas import (
     AuthUserOut,
     AvatarOut,
@@ -17,14 +28,23 @@ from .schemas import (
     GameHubOut,
     LoginIn,
     MessageOut,
+    ModeratorRequestCreateIn,
+    ModeratorRequestOut,
+    ModeratorRequestReviewIn,
     PostIn,
     PostCommentOut,
+    PostModerationActionIn,
+    PostModerationReportOut,
     PostOut,
+    PostReportCreateIn,
     PostVoteIn,
     PostVoteSummaryOut,
     PostUpdateIn,
     SignupIn,
     SignupOut,
+    ModerationQueueItemOut,
+    UserRoleIn,
+    UserRoleOut,
 )
 
 router = Router()
@@ -75,6 +95,91 @@ def me(request):
 
 
 # ── User profile endpoints ─────────────────────────────────────
+
+
+@router.put("/users/{user_id}/role", response={200: UserRoleOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
+def update_user_role(request, user_id: int, data: UserRoleIn):
+    """Change a user's role. Admin access required."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if request.user.profile.role != UserProfile.Role.ADMIN:
+        return 403, {"error": "Admin access required"}
+
+    user = get_object_or_404(User, id=user_id)
+    user.profile.role = data.role
+    user.profile.save()
+    return 200, {"id": user.id, "username": user.username, "role": user.profile.role}
+
+
+@router.post("/users/me/moderator-request", response={201: ModeratorRequestOut, 401: ErrorOut, 409: ErrorOut})
+def create_moderator_request(request, data: ModeratorRequestCreateIn):
+    """Create a moderator access request for the current user."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    if request.user.profile.role in (UserProfile.Role.ADMIN, UserProfile.Role.MODERATOR):
+        return 409, {"error": "User already has moderation access"}
+
+    if ModeratorAccessRequest.objects.filter(user=request.user).exists():
+        moderator_request = request.user.moderator_access_request
+        if moderator_request.status == ModeratorAccessRequest.Status.PENDING:
+            return 409, {"error": "Moderator request already pending"}
+        return 409, {"error": "Moderator request has already been reviewed"}
+
+    moderator_request = ModeratorAccessRequest.objects.create(
+        user=request.user,
+        reason=data.reason.strip(),
+    )
+    return 201, moderator_request
+
+
+@router.get("/moderator-requests", response={200: List[ModeratorRequestOut], 401: ErrorOut, 403: ErrorOut})
+def list_moderator_requests(request, status: str = None):
+    """List moderator access requests. Admin access required."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if request.user.profile.role != UserProfile.Role.ADMIN:
+        return 403, {"error": "Admin access required"}
+
+    requests = ModeratorAccessRequest.objects.select_related("user", "reviewed_by", "user__profile")
+    if status in {
+        ModeratorAccessRequest.Status.PENDING,
+        ModeratorAccessRequest.Status.APPROVED,
+        ModeratorAccessRequest.Status.REJECTED,
+    }:
+        requests = requests.filter(status=status)
+    return 200, requests
+
+
+@router.put(
+    "/moderator-requests/{request_id}",
+    response={200: ModeratorRequestOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 409: ErrorOut},
+)
+def review_moderator_request(request, request_id: int, data: ModeratorRequestReviewIn):
+    """Approve or reject a moderator access request. Admin access required."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if request.user.profile.role != UserProfile.Role.ADMIN:
+        return 403, {"error": "Admin access required"}
+
+    moderator_request = get_object_or_404(
+        ModeratorAccessRequest.objects.select_related("user", "user__profile"),
+        id=request_id,
+    )
+    if moderator_request.status != ModeratorAccessRequest.Status.PENDING:
+        return 409, {"error": "Moderator request already reviewed"}
+
+    moderator_request.status = data.status
+    moderator_request.review_note = data.review_note.strip()
+    moderator_request.reviewed_by = request.user
+    moderator_request.reviewed_at = timezone.now()
+    moderator_request.save()
+
+    if data.status == ModeratorAccessRequest.Status.APPROVED:
+        moderator_request.user.profile.role = UserProfile.Role.MODERATOR
+        moderator_request.user.profile.save()
+
+    return 200, moderator_request
 
 
 @router.put("/users/me/avatar", response={200: AvatarOut, 401: ErrorOut})
@@ -180,12 +285,7 @@ def _absolute_file_url(request, field_file):
         return None
 
     file_url = field_file.url
-    # Already an absolute URL (e.g. Azure Blob Storage) — return as-is.
     if file_url.startswith("http://") or file_url.startswith("https://"):
-        return file_url
-    # In local dev the Vite proxy handles /media, so a relative path works
-    # and avoids returning the Docker-internal hostname (e.g. api:8000).
-    if settings.DEBUG:
         return file_url
     return request.build_absolute_uri(file_url)
 
@@ -198,6 +298,63 @@ def _attach_comment_file_fields(comments, request):
         )
         comment.attachment_url = _absolute_file_url(request, comment.attachment)
     return comments
+
+
+def _has_moderation_access(user):
+    return user.is_authenticated and user.profile.role in {
+        UserProfile.Role.ADMIN,
+        UserProfile.Role.MODERATOR,
+    }
+
+
+def _annotate_moderation_queue(queryset, report_status: Optional[str] = None):
+    reports = PostModerationReport.objects.filter(post_id=OuterRef("pk"))
+    if report_status is not None:
+        reports = reports.filter(status=report_status)
+
+    actions = PostModerationAction.objects.filter(post_id=OuterRef("pk")).order_by("-created_at")
+    latest_reports = reports.order_by("-created_at")
+
+    return queryset.annotate(
+        report_count=Coalesce(
+            Subquery(
+                reports.order_by().values("post").annotate(total=Count("id")).values("total")[:1],
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        ),
+        report_status=Subquery(
+            latest_reports.values("status")[:1],
+            output_field=CharField(),
+        ),
+        latest_report_reason=Subquery(
+            latest_reports.values("reason")[:1],
+            output_field=TextField(),
+        ),
+        latest_reported_at=Subquery(
+            latest_reports.values("created_at")[:1],
+            output_field=DateTimeField(),
+        ),
+        latest_action=Subquery(
+            actions.values("action")[:1],
+            output_field=CharField(),
+        ),
+        latest_action_note=Subquery(
+            actions.values("note")[:1],
+            output_field=TextField(),
+        ),
+        latest_action_at=Subquery(
+            actions.values("created_at")[:1],
+            output_field=DateTimeField(),
+        ),
+    )
+
+
+def _get_moderation_queue_item(post_id: int):
+    return get_object_or_404(
+        _annotate_moderation_queue(_posts_with_related_data()),
+        id=post_id,
+    )
 
 
 @router.post("/posts", response={201: PostOut, 401: ErrorOut, 404: ErrorOut})
@@ -361,3 +518,127 @@ def create_post_comment(
 
     _attach_comment_file_fields([comment], request)
     return 201, comment
+
+
+@router.post(
+    "/posts/{post_id}/reports",
+    response={201: PostModerationReportOut, 400: ErrorOut, 401: ErrorOut, 404: ErrorOut, 409: ErrorOut},
+)
+def create_post_report(request, post_id: int, data: PostReportCreateIn):
+    """Flag a published post for moderator review."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    post = get_object_or_404(Post, id=post_id, status=Post.Status.PUBLISHED)
+    if post.author_id == request.user.id:
+        return 409, {"error": "You cannot report your own post"}
+
+    reason = data.reason.strip()
+    if not reason:
+        return 400, {"error": "Report reason is required"}
+
+    if PostModerationReport.objects.filter(
+        post=post,
+        reporter=request.user,
+        status__in=[PostModerationReport.Status.OPEN, PostModerationReport.Status.ESCALATED],
+    ).exists():
+        return 409, {"error": "You already have an active report for this post"}
+
+    report = PostModerationReport.objects.create(
+        post=post,
+        reporter=request.user,
+        reason=reason,
+    )
+    return 201, report
+
+
+@router.get(
+    "/moderation/queue",
+    response={200: List[ModerationQueueItemOut], 401: ErrorOut, 403: ErrorOut},
+)
+def list_moderation_queue(request, status: str = PostModerationReport.Status.OPEN):
+    """List posts with moderation reports for moderators and admins."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if not _has_moderation_access(request.user):
+        return 403, {"error": "Moderator access required"}
+
+    allowed_statuses = {
+        PostModerationReport.Status.OPEN,
+        PostModerationReport.Status.ESCALATED,
+        PostModerationReport.Status.ACTIONED,
+        PostModerationReport.Status.DISMISSED,
+        "all",
+    }
+    selected_status = status if status in allowed_statuses else PostModerationReport.Status.OPEN
+    report_status = None if selected_status == "all" else selected_status
+
+    queue = (
+        _annotate_moderation_queue(_posts_with_related_data(), report_status)
+        .filter(report_count__gt=0)
+        .exclude(status=Post.Status.DRAFT)
+        .order_by("-latest_reported_at", "-report_count", "-updated_at")
+    )
+    return 200, queue
+
+
+@router.post(
+    "/moderation/posts/{post_id}/actions",
+    response={200: ModerationQueueItemOut, 400: ErrorOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 409: ErrorOut},
+)
+def moderate_post(request, post_id: int, data: PostModerationActionIn):
+    """Apply a moderator action to a reported post."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if not _has_moderation_access(request.user):
+        return 403, {"error": "Moderator access required"}
+
+    post = get_object_or_404(Post, id=post_id)
+    if post.status == Post.Status.DRAFT:
+        return 404, {"error": "Post not found"}
+
+    active_reports = PostModerationReport.objects.filter(
+        post=post,
+        status__in=[PostModerationReport.Status.OPEN, PostModerationReport.Status.ESCALATED],
+    )
+    if not active_reports.exists():
+        return 409, {"error": "No active moderation reports for this post"}
+
+    if data.action == PostModerationAction.Action.REMOVE and post.status == Post.Status.DELETED:
+        return 409, {"error": "Post already removed"}
+
+    note = data.note.strip()
+    PostModerationAction.objects.create(
+        post=post,
+        moderator=request.user,
+        action=data.action,
+        note=note,
+    )
+
+    now = timezone.now()
+    if data.action == PostModerationAction.Action.ESCALATE:
+        active_reports.update(
+            status=PostModerationReport.Status.ESCALATED,
+            reviewed_by=request.user,
+            reviewed_at=now,
+            updated_at=now,
+        )
+    elif data.action == PostModerationAction.Action.DISMISS:
+        active_reports.update(
+            status=PostModerationReport.Status.DISMISSED,
+            reviewed_by=request.user,
+            reviewed_at=now,
+            updated_at=now,
+        )
+    else:
+        active_reports.update(
+            status=PostModerationReport.Status.ACTIONED,
+            reviewed_by=request.user,
+            reviewed_at=now,
+            updated_at=now,
+        )
+        if data.action == PostModerationAction.Action.REMOVE:
+            post.status = Post.Status.DELETED
+            post.save(update_fields=["status", "updated_at"])
+
+    return 200, _get_moderation_queue_item(post.id)

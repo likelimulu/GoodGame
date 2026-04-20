@@ -5,7 +5,17 @@ from django.conf import settings
 from django.test import TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
 
-from .models import GameHub, Post, PostComment, PostVote, Tag
+from .models import (
+    GameHub,
+    ModeratorAccessRequest,
+    Post,
+    PostComment,
+    PostModerationAction,
+    PostModerationReport,
+    PostVote,
+    Tag,
+    UserProfile,
+)
 
 
 class AuthSessionApiTests(TestCase):
@@ -27,6 +37,7 @@ class AuthSessionApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["username"], self.username)
+        self.assertEqual(response.json()["role"], UserProfile.Role.CONTRIBUTOR)
         self.assertEqual(str(self.client.session.get("_auth_user_id")), str(self.user.id))
         self.assertTrue(self.client.session.get_expire_at_browser_close())
 
@@ -81,6 +92,18 @@ class AuthSessionApiTests(TestCase):
         me_response = self.client.get("/api/auth/me")
         self.assertEqual(me_response.status_code, 401)
 
+    def test_me_returns_role(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": self.username, "password": self.password}),
+            content_type="application/json",
+        )
+
+        response = self.client.get("/api/auth/me")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["role"], UserProfile.Role.CONTRIBUTOR)
+
 
 class SignupApiTests(TestCase):
     def test_signup_creates_user(self):
@@ -96,6 +119,10 @@ class SignupApiTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["username"], "newplayer")
         self.assertTrue(User.objects.filter(username="newplayer").exists())
+        self.assertEqual(
+            User.objects.get(username="newplayer").profile.role,
+            UserProfile.Role.CONTRIBUTOR,
+        )
 
     def test_signup_duplicate_username(self):
         User.objects.create_user(username="taken", password="pass", email="a@b.com")
@@ -109,6 +136,192 @@ class SignupApiTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 409)
+
+
+class UserRoleApiTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username="adminuser",
+            password="admin-pass-123",
+            email="admin@example.com",
+        )
+        self.admin_user.profile.role = UserProfile.Role.ADMIN
+        self.admin_user.profile.save()
+
+        self.target_user = User.objects.create_user(
+            username="targetuser",
+            password="target-pass-123",
+            email="target@example.com",
+        )
+
+    def test_update_user_role_requires_authentication(self):
+        response = self.client.put(
+            f"/api/users/{self.target_user.id}/role",
+            data=json.dumps({"role": UserProfile.Role.MODERATOR}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_update_user_role_requires_admin(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "targetuser", "password": "target-pass-123"}),
+            content_type="application/json",
+        )
+
+        response = self.client.put(
+            f"/api/users/{self.target_user.id}/role",
+            data=json.dumps({"role": UserProfile.Role.MODERATOR}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "Admin access required")
+
+    def test_admin_can_update_user_role(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "adminuser", "password": "admin-pass-123"}),
+            content_type="application/json",
+        )
+
+        response = self.client.put(
+            f"/api/users/{self.target_user.id}/role",
+            data=json.dumps({"role": UserProfile.Role.MODERATOR}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.target_user.refresh_from_db()
+        self.target_user.profile.refresh_from_db()
+        self.assertEqual(self.target_user.profile.role, UserProfile.Role.MODERATOR)
+        self.assertEqual(response.json()["role"], UserProfile.Role.MODERATOR)
+
+
+class ModeratorAccessRequestApiTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username="adminmod",
+            password="admin-pass-123",
+            email="adminmod@example.com",
+        )
+        self.admin_user.profile.role = UserProfile.Role.ADMIN
+        self.admin_user.profile.save()
+
+        self.request_user = User.objects.create_user(
+            username="requester",
+            password="request-pass-123",
+            email="requester@example.com",
+        )
+
+    def _login(self, username, password):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    def test_create_moderator_request_requires_authentication(self):
+        response = self.client.post(
+            "/api/users/me/moderator-request",
+            data=json.dumps({"reason": "I help review strategy threads"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_create_moderator_request_creates_pending_request(self):
+        self._login("requester", "request-pass-123")
+
+        response = self.client.post(
+            "/api/users/me/moderator-request",
+            data=json.dumps({"reason": "I help review strategy threads"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["status"], ModeratorAccessRequest.Status.PENDING)
+        self.assertEqual(response.json()["user"]["username"], "requester")
+        self.assertEqual(response.json()["user"]["role"], UserProfile.Role.CONTRIBUTOR)
+        self.assertTrue(ModeratorAccessRequest.objects.filter(user=self.request_user).exists())
+
+    def test_create_moderator_request_conflicts_when_pending_exists(self):
+        ModeratorAccessRequest.objects.create(user=self.request_user, reason="First request")
+        self._login("requester", "request-pass-123")
+
+        response = self.client.post(
+            "/api/users/me/moderator-request",
+            data=json.dumps({"reason": "Second request"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "Moderator request already pending")
+
+    def test_non_admin_cannot_list_requests(self):
+        self._login("requester", "request-pass-123")
+
+        response = self.client.get("/api/moderator-requests")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "Admin access required")
+
+    def test_admin_can_list_requests(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user,
+            reason="I can help moderate spoiler-heavy threads",
+        )
+        self._login("adminmod", "admin-pass-123")
+
+        response = self.client.get("/api/moderator-requests")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]["id"], request_record.id)
+        self.assertEqual(response.json()[0]["user"]["username"], "requester")
+
+    def test_admin_can_approve_request_and_promote_user(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user,
+            reason="I can help moderate spoiler-heavy threads",
+        )
+        self._login("adminmod", "admin-pass-123")
+
+        response = self.client.put(
+            f"/api/moderator-requests/{request_record.id}",
+            data=json.dumps({"status": "approved", "review_note": "Approved for Sprint 6 moderation queue"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_record.refresh_from_db()
+        self.request_user.refresh_from_db()
+        self.request_user.profile.refresh_from_db()
+        self.assertEqual(request_record.status, ModeratorAccessRequest.Status.APPROVED)
+        self.assertEqual(request_record.reviewed_by_id, self.admin_user.id)
+        self.assertEqual(self.request_user.profile.role, UserProfile.Role.MODERATOR)
+        self.assertEqual(response.json()["status"], ModeratorAccessRequest.Status.APPROVED)
+        self.assertEqual(response.json()["reviewed_by_username"], "adminmod")
+
+    def test_admin_can_reject_request_without_role_change(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user,
+            reason="I can help moderate spoiler-heavy threads",
+        )
+        self._login("adminmod", "admin-pass-123")
+
+        response = self.client.put(
+            f"/api/moderator-requests/{request_record.id}",
+            data=json.dumps({"status": "rejected", "review_note": "Need more activity first"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        request_record.refresh_from_db()
+        self.request_user.profile.refresh_from_db()
+        self.assertEqual(request_record.status, ModeratorAccessRequest.Status.REJECTED)
+        self.assertEqual(self.request_user.profile.role, UserProfile.Role.CONTRIBUTOR)
 
 
 class GameHubApiTests(TestCase):
@@ -657,3 +870,219 @@ class PostCommentApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class PostModerationApiTests(TestCase):
+    def setUp(self):
+        self.author = User.objects.create_user(
+            username="author",
+            password="author-pass-123",
+            email="author@example.com",
+        )
+        self.reporter = User.objects.create_user(
+            username="reporter",
+            password="report-pass-123",
+            email="reporter@example.com",
+        )
+        self.moderator = User.objects.create_user(
+            username="moderator",
+            password="mod-pass-123",
+            email="moderator@example.com",
+        )
+        self.moderator.profile.role = UserProfile.Role.MODERATOR
+        self.moderator.profile.save()
+
+        self.admin_user = User.objects.create_user(
+            username="adminqueue",
+            password="admin-pass-123",
+            email="adminqueue@example.com",
+        )
+        self.admin_user.profile.role = UserProfile.Role.ADMIN
+        self.admin_user.profile.save()
+
+        self.hub = GameHub.objects.create(name="Mario Hub", slug="mario-hub")
+        self.post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Unmarked secret route guide",
+            body="This post reveals late-game shortcuts.",
+            status=Post.Status.PUBLISHED,
+            has_spoilers=True,
+        )
+
+    def _login(self, username, password):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    def test_report_post_requires_authentication(self):
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "Missing spoiler warning"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_authenticated_user_can_report_post(self):
+        self._login("reporter", "report-pass-123")
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "Missing spoiler warning"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["status"], PostModerationReport.Status.OPEN)
+        self.assertEqual(response.json()["reporter"]["username"], "reporter")
+        self.assertTrue(
+            PostModerationReport.objects.filter(post=self.post, reporter=self.reporter).exists()
+        )
+
+    def test_user_cannot_report_own_post(self):
+        self._login("author", "author-pass-123")
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "Trying to self-report"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "You cannot report your own post")
+
+    def test_duplicate_active_report_is_rejected(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Already reported",
+        )
+        self._login("reporter", "report-pass-123")
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "Still bad"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "You already have an active report for this post")
+
+    def test_queue_requires_moderation_access(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Missing spoiler warning",
+        )
+        self._login("reporter", "report-pass-123")
+
+        response = self.client.get("/api/moderation/queue")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "Moderator access required")
+
+    def test_moderator_can_view_flagged_queue(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Missing spoiler warning",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.get("/api/moderation/queue")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]["id"], self.post.id)
+        self.assertEqual(response.json()[0]["report_count"], 1)
+        self.assertEqual(response.json()[0]["report_status"], PostModerationReport.Status.OPEN)
+        self.assertEqual(response.json()[0]["latest_report_reason"], "Missing spoiler warning")
+
+    def test_warn_action_resolves_open_reports(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Missing spoiler warning",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "warn", "note": "Added moderator warning"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
+        self.post.refresh_from_db()
+        self.assertEqual(report.status, PostModerationReport.Status.ACTIONED)
+        self.assertEqual(self.post.status, Post.Status.PUBLISHED)
+        self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ACTIONED)
+        self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.WARN)
+
+    def test_escalate_action_marks_reports_escalated(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Repeat bait title",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "escalate", "note": "Needs admin review"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
+        self.assertEqual(report.status, PostModerationReport.Status.ESCALATED)
+        self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ESCALATED)
+        self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.ESCALATE)
+
+    def test_remove_action_soft_deletes_post(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Spam repost",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "remove", "note": "Removed from public feed"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
+        self.post.refresh_from_db()
+        self.assertEqual(report.status, PostModerationReport.Status.ACTIONED)
+        self.assertEqual(self.post.status, Post.Status.DELETED)
+        self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ACTIONED)
+        self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.REMOVE)
+
+    def test_dismiss_action_clears_report_without_deleting_post(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="False alarm",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "dismiss", "note": "No issue found"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
+        self.post.refresh_from_db()
+        self.assertEqual(report.status, PostModerationReport.Status.DISMISSED)
+        self.assertEqual(self.post.status, Post.Status.PUBLISHED)
+        self.assertEqual(response.json()["report_status"], PostModerationReport.Status.DISMISSED)
+        self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.DISMISS)
