@@ -323,6 +323,10 @@ def _annotate_moderation_queue(queryset, report_status: Optional[str] = None):
             ),
             Value(0),
         ),
+        report_status=Subquery(
+            latest_reports.values("status")[:1],
+            output_field=CharField(),
+        ),
         latest_report_reason=Subquery(
             latest_reports.values("reason")[:1],
             output_field=TextField(),

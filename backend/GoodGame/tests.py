@@ -998,6 +998,7 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(len(response.json()), 1)
         self.assertEqual(response.json()[0]["id"], self.post.id)
         self.assertEqual(response.json()[0]["report_count"], 1)
+        self.assertEqual(response.json()[0]["report_status"], PostModerationReport.Status.OPEN)
         self.assertEqual(response.json()[0]["latest_report_reason"], "Missing spoiler warning")
 
     def test_warn_action_resolves_open_reports(self):
@@ -1019,6 +1020,7 @@ class PostModerationApiTests(TestCase):
         self.post.refresh_from_db()
         self.assertEqual(report.status, PostModerationReport.Status.ACTIONED)
         self.assertEqual(self.post.status, Post.Status.PUBLISHED)
+        self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ACTIONED)
         self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.WARN)
 
     def test_escalate_action_marks_reports_escalated(self):
@@ -1038,6 +1040,7 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         report = PostModerationReport.objects.get(post=self.post, reporter=self.reporter)
         self.assertEqual(report.status, PostModerationReport.Status.ESCALATED)
+        self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ESCALATED)
         self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.ESCALATE)
 
     def test_remove_action_soft_deletes_post(self):
@@ -1059,6 +1062,7 @@ class PostModerationApiTests(TestCase):
         self.post.refresh_from_db()
         self.assertEqual(report.status, PostModerationReport.Status.ACTIONED)
         self.assertEqual(self.post.status, Post.Status.DELETED)
+        self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ACTIONED)
         self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.REMOVE)
 
     def test_dismiss_action_clears_report_without_deleting_post(self):
@@ -1080,4 +1084,5 @@ class PostModerationApiTests(TestCase):
         self.post.refresh_from_db()
         self.assertEqual(report.status, PostModerationReport.Status.DISMISSED)
         self.assertEqual(self.post.status, Post.Status.PUBLISHED)
+        self.assertEqual(response.json()["report_status"], PostModerationReport.Status.DISMISSED)
         self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.DISMISS)

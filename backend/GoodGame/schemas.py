@@ -172,6 +172,7 @@ class ModerationQueueItemOut(Schema):
     is_question: bool
     has_spoilers: bool
     status: str
+    report_status: str
     created_at: datetime
     updated_at: datetime
     report_count: int
