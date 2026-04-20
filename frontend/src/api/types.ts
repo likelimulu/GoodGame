@@ -65,3 +65,10 @@ export interface PostVoteSummary {
   downvote_count: number;
   current_user_vote: number;
 }
+
+export interface PostModerationReport {
+  id: number;
+  reason: string;
+  status: string;
+  created_at: string;
+}
