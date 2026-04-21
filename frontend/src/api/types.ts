@@ -103,3 +103,10 @@ export interface ModerationQueueItem {
   latest_action_note: string | null;
   latest_action_at: string | null;
 }
+
+export interface PostModerationReport {
+  id: number;
+  reason: string;
+  status: string;
+  created_at: string;
+}
