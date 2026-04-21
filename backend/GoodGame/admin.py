@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import GameHub, ModeratorAccessRequest, Post, PostVote, Tag, UserProfile
+from .models import (
+    GameHub,
+    ModeratorAccessRequest,
+    Post,
+    PostModerationAction,
+    PostModerationReport,
+    PostVote,
+    Tag,
+    UserProfile,
+)
 
 
 @admin.register(UserProfile)
@@ -38,3 +47,17 @@ class PostVoteAdmin(admin.ModelAdmin):
     list_display = ("post", "user", "value", "updated_at")
     list_filter = ("value",)
     search_fields = ("post__title", "user__username")
+
+
+@admin.register(PostModerationReport)
+class PostModerationReportAdmin(admin.ModelAdmin):
+    list_display = ("post", "reporter", "status", "created_at", "reviewed_by")
+    list_filter = ("status",)
+    search_fields = ("post__title", "reporter__username", "reason")
+
+
+@admin.register(PostModerationAction)
+class PostModerationActionAdmin(admin.ModelAdmin):
+    list_display = ("post", "moderator", "action", "created_at")
+    list_filter = ("action",)
+    search_fields = ("post__title", "moderator__username", "note")
