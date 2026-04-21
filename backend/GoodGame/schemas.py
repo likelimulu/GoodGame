@@ -148,3 +148,38 @@ class UserRoleOut(Schema):
     id: int
     username: str
     role: str
+
+
+class ModeratorRequestCreateIn(Schema):
+    reason: str = ""
+
+
+class ModeratorRequestReviewIn(Schema):
+    status: Literal["approved", "rejected"]
+    review_note: str = ""
+
+
+class ModeratorRequestUserOut(Schema):
+    id: int
+    username: str
+    email: str
+    role: str
+
+    @staticmethod
+    def resolve_role(obj):
+        return obj.profile.role
+
+
+class ModeratorRequestOut(Schema):
+    id: int
+    user: ModeratorRequestUserOut
+    reason: str
+    status: str
+    review_note: str
+    requested_at: datetime
+    reviewed_at: Optional[datetime] = None
+    reviewed_by_username: Optional[str] = None
+
+    @staticmethod
+    def resolve_reviewed_by_username(obj):
+        return obj.reviewed_by.username if obj.reviewed_by else None

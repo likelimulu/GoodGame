@@ -8,8 +8,9 @@ from django.conf import settings
 from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
-from .models import GameHub, Post, PostComment, PostVote, Tag, UserProfile
+from .models import GameHub, ModeratorAccessRequest, Post, PostComment, PostVote, Tag, UserProfile
 from .schemas import (
     AuthUserOut,
     AvatarOut,
@@ -17,6 +18,9 @@ from .schemas import (
     GameHubOut,
     LoginIn,
     MessageOut,
+    ModeratorRequestCreateIn,
+    ModeratorRequestOut,
+    ModeratorRequestReviewIn,
     PostIn,
     PostCommentOut,
     PostOut,
@@ -91,6 +95,77 @@ def update_user_role(request, user_id: int, data: UserRoleIn):
     user.profile.role = data.role
     user.profile.save()
     return 200, {"id": user.id, "username": user.username, "role": user.profile.role}
+
+
+@router.post("/users/me/moderator-request", response={201: ModeratorRequestOut, 401: ErrorOut, 409: ErrorOut})
+def create_moderator_request(request, data: ModeratorRequestCreateIn):
+    """Create a moderator access request for the current user."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    if request.user.profile.role in (UserProfile.Role.ADMIN, UserProfile.Role.MODERATOR):
+        return 409, {"error": "User already has moderation access"}
+
+    if ModeratorAccessRequest.objects.filter(user=request.user).exists():
+        moderator_request = request.user.moderator_access_request
+        if moderator_request.status == ModeratorAccessRequest.Status.PENDING:
+            return 409, {"error": "Moderator request already pending"}
+        return 409, {"error": "Moderator request has already been reviewed"}
+
+    moderator_request = ModeratorAccessRequest.objects.create(
+        user=request.user,
+        reason=data.reason.strip(),
+    )
+    return 201, moderator_request
+
+
+@router.get("/moderator-requests", response={200: List[ModeratorRequestOut], 401: ErrorOut, 403: ErrorOut})
+def list_moderator_requests(request, status: str = None):
+    """List moderator access requests. Admin access required."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if request.user.profile.role != UserProfile.Role.ADMIN:
+        return 403, {"error": "Admin access required"}
+
+    requests = ModeratorAccessRequest.objects.select_related("user", "reviewed_by", "user__profile")
+    if status in {
+        ModeratorAccessRequest.Status.PENDING,
+        ModeratorAccessRequest.Status.APPROVED,
+        ModeratorAccessRequest.Status.REJECTED,
+    }:
+        requests = requests.filter(status=status)
+    return 200, requests
+
+
+@router.put(
+    "/moderator-requests/{request_id}",
+    response={200: ModeratorRequestOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 409: ErrorOut},
+)
+def review_moderator_request(request, request_id: int, data: ModeratorRequestReviewIn):
+    """Approve or reject a moderator access request. Admin access required."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if request.user.profile.role != UserProfile.Role.ADMIN:
+        return 403, {"error": "Admin access required"}
+
+    moderator_request = get_object_or_404(
+        ModeratorAccessRequest.objects.select_related("user", "user__profile"),
+        id=request_id,
+    )
+    if moderator_request.status != ModeratorAccessRequest.Status.PENDING:
+        return 409, {"error": "Moderator request already reviewed"}
+
+    moderator_request.status = data.status
+    moderator_request.review_note = data.review_note.strip()
+    moderator_request.reviewed_by = request.user
+    moderator_request.reviewed_at = timezone.now()
+    moderator_request.save()
+
+    if data.status == ModeratorAccessRequest.Status.APPROVED:
+        moderator_request.user.profile.role = UserProfile.Role.MODERATOR
+        moderator_request.user.profile.save()
+
+    return 200, moderator_request
 
 
 @router.put("/users/me/avatar", response={200: AvatarOut, 401: ErrorOut})
