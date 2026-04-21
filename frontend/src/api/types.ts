@@ -80,6 +80,30 @@ export interface ModeratorAccessRequest {
   reviewed_by_username: string | null;
 }
 
+export type ModerationReportStatus = "open" | "actioned" | "escalated" | "dismissed";
+export type ModerationActionType = "warn" | "remove" | "escalate" | "dismiss";
+
+export interface ModerationQueueItem {
+  id: number;
+  game_hub: GameHub;
+  author: PostAuthor;
+  title: string;
+  body: string;
+  tags: Tag[];
+  is_question: boolean;
+  has_spoilers: boolean;
+  status: PostStatus;
+  report_status: ModerationReportStatus;
+  created_at: string;
+  updated_at: string;
+  report_count: number;
+  latest_report_reason: string | null;
+  latest_reported_at: string | null;
+  latest_action: ModerationActionType | null;
+  latest_action_note: string | null;
+  latest_action_at: string | null;
+}
+
 export interface PostModerationReport {
   id: number;
   reason: string;
