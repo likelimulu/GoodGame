@@ -11,6 +11,8 @@ import EditPostPage from "./pages/EditPostPage";
 import PostsFeedPage from "./pages/PostsFeedPage";
 import AdminModeratorRequestsPage from "./pages/AdminModeratorRequestsPage";
 import ModeratorWorkspacePage from "./pages/ModeratorWorkspacePage";
+import NotFoundPage from "./pages/error/NotFoundPage";
+import ErrorPage from "./pages/error/ErrorPage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -85,7 +87,8 @@ function App() {
                   </RequireModerator>
                 }
               />
-              <Route path="*" element={<Navigate to="/posts" replace />} />
+              <Route path="/error/:status" element={<ErrorPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </BrowserRouter>
         </ToastProvider>

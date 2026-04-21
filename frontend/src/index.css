@@ -1289,6 +1289,17 @@
     background: rgba(255, 255, 255, 0.6);
   }
 
+  /* ── 404 page ───────────────────────────────────────────────────────── */
+
+  .error-code {
+    margin: 8px 0 16px;
+    color: var(--color-gg-ink);
+    font-family: var(--font-bungee);
+    font-size: clamp(80px, 12vw, 140px);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
   /* ── Error boundary fallback ─────────────────────────────────────────── */
 
   .error-boundary-fallback {

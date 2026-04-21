@@ -63,6 +63,8 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
         }
         if (postsResponse.status === 200 && Array.isArray(postsResponse.data)) {
           setPosts(sortPosts(postsResponse.data as Post[], mineOnly));
+        } else if (postsResponse.status !== 0) {
+          navigate(`/error/${postsResponse.status}`, { replace: true });
         } else {
           setError((postsResponse.data as ApiError).error ?? "Failed to load posts");
         }

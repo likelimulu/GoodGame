@@ -1,4 +1,20 @@
 services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: goodgame
+      POSTGRES_USER: goodgameadmin
+      POSTGRES_PASSWORD: localpass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goodgameadmin -d goodgame"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - goodgame-network
+
   frontend:
     build:
       context: ./frontend
@@ -13,24 +29,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    networks:
-      - goodgame-network
-
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: goodgame
-      POSTGRES_USER: goodgameadmin
-      POSTGRES_PASSWORD: localpass123
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U goodgameadmin -d goodgame"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
     networks:
       - goodgame-network
 
@@ -65,7 +63,7 @@ services:
       - goodgame-network
 
 volumes:
-  pgdata:
+  postgres_data:
 
 networks:
   goodgame-network:

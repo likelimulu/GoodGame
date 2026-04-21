@@ -14,7 +14,6 @@ export default function EditPostPage() {
 
   const [post, setPost] = useState<Post | null>(null);
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -31,7 +30,7 @@ export default function EditPostPage() {
         if (status === 200) {
           setPost(data as Post);
         } else {
-          setLoadError((data as ApiError).error ?? "Post not found");
+          navigate(`/error/${status || 404}`, { replace: true });
         }
       });
     }
@@ -85,19 +84,6 @@ export default function EditPostPage() {
     } else {
       addToast("Failed to delete post", "error");
     }
-  }
-
-  if (loadError) {
-    return (
-      <Layout>
-        <main className="page-grid">
-          <section className="hero-card">
-            <h1 className="headline">Post Not Found</h1>
-            <p className="subhead">{loadError}</p>
-          </section>
-        </main>
-      </Layout>
-    );
   }
 
   if (!post) {
