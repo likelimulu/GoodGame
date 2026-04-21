@@ -29,10 +29,22 @@ class AuthUserOut(Schema):
     username: str
     email: str
     role: str
+    email_verified: bool = False
 
     @staticmethod
     def resolve_role(obj):
         return obj.profile.role
+
+    @staticmethod
+    def resolve_email_verified(obj):
+        try:
+            return obj.profile.email_verified
+        except Exception:
+            return False
+
+
+class EmailVerifyIn(Schema):
+    token: str
 
 
 class ErrorOut(Schema):
@@ -86,6 +98,23 @@ class PostUpdateIn(Schema):
 class PostAuthorOut(Schema):
     id: int
     username: str
+    reputation_score: int = 0
+    is_trusted: bool = False
+
+    @staticmethod
+    def resolve_reputation_score(obj):
+        try:
+            return obj.profile.reputation_score
+        except Exception:
+            return 0
+
+    @staticmethod
+    def resolve_is_trusted(obj):
+        from .models import HIGH_REPUTATION_THRESHOLD
+        try:
+            return obj.profile.reputation_score >= HIGH_REPUTATION_THRESHOLD
+        except Exception:
+            return False
 
 
 class PostVoteSummaryOut(Schema):
@@ -120,6 +149,7 @@ class PostOut(Schema):
     has_spoilers: bool
     status: str
     is_edited: bool
+    is_priority: bool = False
     created_at: datetime
     updated_at: datetime
     vote_score: int
@@ -127,6 +157,14 @@ class PostOut(Schema):
     downvote_count: int
     current_user_vote: int = 0
     comment_count: int = 0
+
+    @staticmethod
+    def resolve_is_priority(obj):
+        from .models import HIGH_REPUTATION_THRESHOLD
+        try:
+            return obj.author.profile.reputation_score >= HIGH_REPUTATION_THRESHOLD
+        except Exception:
+            return False
 
 
 class PostVoteIn(Schema):

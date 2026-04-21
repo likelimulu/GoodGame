@@ -11,6 +11,9 @@ import EditPostPage from "./pages/EditPostPage";
 import PostsFeedPage from "./pages/PostsFeedPage";
 import AdminModeratorRequestsPage from "./pages/AdminModeratorRequestsPage";
 import ModeratorWorkspacePage from "./pages/ModeratorWorkspacePage";
+import ContentRulesPage from "./pages/ContentRulesPage";
+import VerifyEmailPage from "./pages/VerifyEmailPage";
+import DeveloperPage from "./pages/DeveloperPage";
 import NotFoundPage from "./pages/error/NotFoundPage";
 import ErrorPage from "./pages/error/ErrorPage";
 
@@ -37,6 +40,14 @@ function RequireModerator({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireDeveloper({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== "developer") return <Navigate to="/posts" replace />;
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <ErrorBoundary>
@@ -55,6 +66,8 @@ function App() {
               />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
+              <Route path="/content-rules" element={<ContentRulesPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route
                 path="/posts/create"
                 element={
@@ -85,6 +98,14 @@ function App() {
                   <RequireModerator>
                     <ModeratorWorkspacePage />
                   </RequireModerator>
+                }
+              />
+              <Route
+                path="/developer"
+                element={
+                  <RequireDeveloper>
+                    <DeveloperPage />
+                  </RequireDeveloper>
                 }
               />
               <Route path="/error/:status" element={<ErrorPage />} />

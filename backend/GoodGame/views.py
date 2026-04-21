@@ -1,3 +1,5 @@
+import secrets
+from datetime import timedelta
 from typing import List, Optional
 
 from ninja import File, Form, Router
@@ -5,12 +7,14 @@ from ninja.files import UploadedFile
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.core.mail import send_mail
 from django.db.models import CharField, Count, DateTimeField, IntegerField, OuterRef, Q, Subquery, Sum, TextField, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from .models import (
+    EmailVerificationToken,
     GameHub,
     ModeratorAccessRequest,
     Post,
@@ -24,6 +28,7 @@ from .models import (
 from .schemas import (
     AuthUserOut,
     AvatarOut,
+    EmailVerifyIn,
     ErrorOut,
     GameHubOut,
     LoginIn,
@@ -53,6 +58,31 @@ router = Router()
 # ── Auth endpoints ────────────────────────────────────────────
 
 
+def _send_verification_email(user):
+    token = secrets.token_urlsafe(48)
+    expiry_hours = getattr(settings, "EMAIL_VERIFICATION_EXPIRY_HOURS", 24)
+    EmailVerificationToken.objects.create(
+        user=user,
+        token=token,
+        expires_at=timezone.now() + timedelta(hours=expiry_hours),
+    )
+    frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+    verify_link = f"{frontend_url}/verify-email?token={token}"
+    send_mail(
+        subject="GoodGame — Verify your email address",
+        message=(
+            f"Hi {user.username},\n\n"
+            f"Please verify your email by clicking the link below:\n\n"
+            f"{verify_link}\n\n"
+            f"This link expires in {expiry_hours} hours.\n\n"
+            "— The GoodGame Team"
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+        fail_silently=True,
+    )
+
+
 @router.post("/signup", response={201: SignupOut, 409: dict})
 def signup(request, data: SignupIn):
     if User.objects.filter(username=data.username).exists():
@@ -63,6 +93,7 @@ def signup(request, data: SignupIn):
         password=data.password,
         email=data.email,
     )
+    _send_verification_email(user)
     return 201, user
 
 
@@ -92,6 +123,39 @@ def me(request):
         return 401, {"error": "Authentication required"}
 
     return 200, request.user
+
+
+@router.post("/auth/verify-email", response={200: MessageOut, 400: ErrorOut, 409: ErrorOut})
+def verify_email(request, data: EmailVerifyIn):
+    """Verify a user's email address using the token from the verification email."""
+    token_obj = EmailVerificationToken.objects.filter(token=data.token).select_related("user", "user__profile").first()
+    if not token_obj:
+        return 400, {"error": "Invalid verification token"}
+
+    if token_obj.used_at is not None:
+        return 409, {"error": "This token has already been used"}
+
+    if timezone.now() > token_obj.expires_at:
+        return 400, {"error": "Verification token has expired. Please request a new one."}
+
+    token_obj.used_at = timezone.now()
+    token_obj.save(update_fields=["used_at"])
+    token_obj.user.profile.email_verified = True
+    token_obj.user.profile.save(update_fields=["email_verified"])
+    return 200, {"message": "Email verified successfully"}
+
+
+@router.post("/auth/resend-verification", response={200: MessageOut, 401: ErrorOut, 409: ErrorOut})
+def resend_verification(request):
+    """Resend the verification email to the current authenticated user."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    if request.user.profile.email_verified:
+        return 409, {"error": "Email is already verified"}
+
+    _send_verification_email(request.user)
+    return 200, {"message": "Verification email sent"}
 
 
 # ── User profile endpoints ─────────────────────────────────────
@@ -215,7 +279,7 @@ def _get_or_create_tags(tag_names: List[str]) -> List[Tag]:
 
 
 def _posts_with_related_data():
-    return Post.objects.select_related("game_hub", "author").prefetch_related("tags")
+    return Post.objects.select_related("game_hub", "author", "author__profile").prefetch_related("tags")
 
 
 def _annotate_post_stats(queryset):

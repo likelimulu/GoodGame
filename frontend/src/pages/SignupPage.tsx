@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+/* eslint-disable react/jsx-no-target-blank */
 import type { ApiError, ModeratorAccessRequest } from "../api/types";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/useAuth";
@@ -40,19 +41,16 @@ export default function SignupPage() {
       setError(result.error);
       addToast(result.error, "error");
     } else {
-      if (!requestModerator) {
+      const loginResult = await login(username, password, false);
+      if (loginResult.error) {
         addToast("Account created! Please log in.", "success");
         navigate("/login");
         return;
       }
 
-      const loginResult = await login(username, password, false);
-      if (loginResult.error) {
-        const message =
-          "Account created, but moderator request could not be submitted automatically. Please log in and contact an admin.";
-        setError(message);
-        addToast(message, "error");
-        navigate("/login");
+      if (!requestModerator) {
+        addToast("Account created! Welcome to GoodGame.", "success");
+        navigate("/posts");
         return;
       }
 
@@ -152,7 +150,11 @@ export default function SignupPage() {
             <label className="check">
               <input name="accept_policy" type="checkbox" required />
               <span>
-                I agree to the account policy and community moderation rules.
+                I agree to the{" "}
+                <Link className="text-link" to="/content-rules">
+                  community content rules
+                </Link>{" "}
+                and moderation policy.
               </span>
             </label>
 
