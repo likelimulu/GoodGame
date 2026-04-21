@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { api } from "../api/client";
+import type { ApiMessage, ApiError } from "../api/types";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
@@ -40,6 +42,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
+
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
+
+  async function handleResendVerification() {
+    setResending(true);
+    const { status } = await api.post<ApiMessage | ApiError>("/auth/resend-verification", {});
+    setResending(false);
+    if (status === 200) setResent(true);
+  }
+
+  const showVerificationBanner = user && !user.email_verified && pathname !== "/verify-email";
   const isAccount = pathname === "/login" || pathname === "/signup";
   const isFeed = pathname === "/posts";
   const isMyPosts = pathname === "/my-posts";
@@ -194,6 +208,29 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
         </nav>
       </header>
+      {showVerificationBanner && (
+        <div className="email-banner">
+          <p className="email-banner-text">
+            Your email is not verified.{" "}
+            <Link className="email-banner-link" to="/verify-email">
+              Check your inbox
+            </Link>{" "}
+            or{" "}
+            {resent ? (
+              <span className="email-banner-sent">email sent!</span>
+            ) : (
+              <button
+                className="email-banner-link email-banner-btn"
+                type="button"
+                disabled={resending}
+                onClick={handleResendVerification}
+              >
+                {resending ? "sending…" : "resend verification email"}
+              </button>
+            )}
+          </p>
+        </div>
+      )}
       {children}
     </div>
   );

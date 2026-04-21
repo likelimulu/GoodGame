@@ -5,6 +5,7 @@ export interface AuthUser {
   username: string;
   email: string;
   role: UserRole;
+  email_verified: boolean;
 }
 
 export interface GameHub {
@@ -21,6 +22,8 @@ export interface Tag {
 export interface PostAuthor {
   id: number;
   username: string;
+  reputation_score: number;
+  is_trusted: boolean;
 }
 
 export type PostStatus = "draft" | "published" | "deleted";
@@ -36,6 +39,7 @@ export interface Post {
   has_spoilers: boolean;
   status: PostStatus;
   is_edited: boolean;
+  is_priority: boolean;
   created_at: string;
   updated_at: string;
   vote_score: number;

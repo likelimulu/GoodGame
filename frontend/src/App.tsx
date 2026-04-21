@@ -11,6 +11,8 @@ import EditPostPage from "./pages/EditPostPage";
 import PostsFeedPage from "./pages/PostsFeedPage";
 import AdminModeratorRequestsPage from "./pages/AdminModeratorRequestsPage";
 import ModeratorWorkspacePage from "./pages/ModeratorWorkspacePage";
+import ContentRulesPage from "./pages/ContentRulesPage";
+import VerifyEmailPage from "./pages/VerifyEmailPage";
 import NotFoundPage from "./pages/error/NotFoundPage";
 import ErrorPage from "./pages/error/ErrorPage";
 
@@ -55,6 +57,8 @@ function App() {
               />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
+              <Route path="/content-rules" element={<ContentRulesPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route
                 path="/posts/create"
                 element={
