@@ -111,7 +111,6 @@ def update_user_role(request, user_id: int, data: UserRoleIn):
     return 200, {"id": user.id, "username": user.username, "role": user.profile.role}
 
 
-<<<<<<< HEAD
 @router.post("/users/me/moderator-request", response={201: ModeratorRequestOut, 401: ErrorOut, 409: ErrorOut})
 def create_moderator_request(request, data: ModeratorRequestCreateIn):
     """Create a moderator access request for the current user."""
