@@ -21,6 +21,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isAccount = pathname === "/login" || pathname === "/signup";
   const isFeed = pathname === "/posts";
   const isMyPosts = pathname === "/my-posts";
+  const isAdminQueue = pathname === "/admin/moderator-requests";
   const isPostStudio =
     pathname === "/posts/create" || pathname.startsWith("/posts/") && pathname !== "/posts";
 
@@ -62,6 +63,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </button>
               {dropdownOpen && (
                 <div className="nav-dropdown">
+                  {user.role === "admin" && (
+                    <Link
+                      className={`nav-dropdown-item ${isAdminQueue ? "active" : ""}`}
+                      to="/admin/moderator-requests"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      Admin Queue
+                    </Link>
+                  )}
                   <button
                     className="nav-dropdown-item"
                     onClick={() => { logout(); setDropdownOpen(false); }}
