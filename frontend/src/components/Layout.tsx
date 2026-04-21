@@ -6,7 +6,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
+  const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -18,6 +21,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [dropdownOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        !hamburgerRef.current?.contains(target) &&
+        !navRef.current?.contains(target)
+      ) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
   const isAccount = pathname === "/login" || pathname === "/signup";
   const isFeed = pathname === "/posts";
   const isMyPosts = pathname === "/my-posts";
@@ -40,17 +62,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               Separate moderator workspace for review queues and moderation guidance.
             </p>
           </div>
-          <nav className="nav" aria-label="Moderator workspace">
-            <Link className="active" to="/moderator">
+          <button
+            ref={hamburgerRef}
+            className="nav-hamburger"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            {menuOpen ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            )}
+          </button>
+          <nav ref={navRef} className={`nav${menuOpen ? " nav--open" : ""}`} aria-label="Moderator workspace">
+            <Link className="active" to="/moderator" onClick={() => setMenuOpen(false)}>
               Queue
             </Link>
-            <Link to="/posts">Community Feed</Link>
+            <Link to="/posts" onClick={() => setMenuOpen(false)}>Community Feed</Link>
             <button
               className="nav-button"
               type="button"
-              onClick={() => {
-                logout();
-              }}
+              onClick={() => { logout(); setMenuOpen(false); }}
             >
               Sign Out
             </button>
@@ -69,19 +109,40 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             GoodGame
           </Link>
         </h1>
-        <nav className="nav">
+        <button
+          ref={hamburgerRef}
+          className="nav-hamburger"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          {menuOpen ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          )}
+        </button>
+        <nav ref={navRef} className={`nav${menuOpen ? " nav--open" : ""}`}>
           <span>Game Hubs</span>
-          <Link className={isFeed ? "active" : ""} to="/posts">
+          <Link className={isFeed ? "active" : ""} to="/posts" onClick={() => setMenuOpen(false)}>
             Patch Feed
           </Link>
           {user && (
-            <Link className={isMyPosts ? "active" : ""} to="/my-posts">
+            <Link className={isMyPosts ? "active" : ""} to="/my-posts" onClick={() => setMenuOpen(false)}>
               My Posts
             </Link>
           )}
           <Link
             className={isPostStudio ? "active" : ""}
             to="/posts/create"
+            onClick={() => setMenuOpen(false)}
           >
             Post Studio
           </Link>
@@ -127,7 +188,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               )}
             </div>
           ) : (
-            <Link className={isAccount ? "active" : ""} to="/login">
+            <Link className={isAccount ? "active" : ""} to="/login" onClick={() => setMenuOpen(false)}>
               Login
             </Link>
           )}
