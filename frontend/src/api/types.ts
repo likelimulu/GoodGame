@@ -79,3 +79,10 @@ export interface ModeratorAccessRequest {
   reviewed_at: string | null;
   reviewed_by_username: string | null;
 }
+
+export interface PostModerationReport {
+  id: number;
+  reason: string;
+  status: string;
+  created_at: string;
+}
