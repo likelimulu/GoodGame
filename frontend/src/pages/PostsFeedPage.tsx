@@ -21,6 +21,7 @@ function sortPosts(posts: Post[], mineOnly: boolean) {
     if (mineOnly) {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     }
+    if (a.is_priority !== b.is_priority) return a.is_priority ? -1 : 1;
     if (b.vote_score !== a.vote_score) return b.vote_score - a.vote_score;
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
@@ -306,12 +307,18 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                   <div className="post-body">
                     <div className="post-meta">
                       <span className="post-hub">{post.game_hub.name}</span>
-                      <span>by {post.author.username}</span>
+                      <span>
+                        by {post.author.username}
+                        {post.author.is_trusted && (
+                          <span className="pill pill-trusted" title={`Reputation: ${post.author.reputation_score}`}>Trusted</span>
+                        )}
+                      </span>
                       <span>{new Date(post.created_at).toLocaleDateString()}</span>
                       {post.is_edited && <span>edited</span>}
                     </div>
 
                     <div className="post-badges">
+                      {post.is_priority && <span className="pill pill-priority">Priority</span>}
                       {post.is_question && <span className="pill pill-question">Question</span>}
                       {post.has_spoilers && <span className="pill pill-warning">Spoilers</span>}
                     </div>

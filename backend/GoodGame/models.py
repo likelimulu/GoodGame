@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+HIGH_REPUTATION_THRESHOLD = 5
+
 
 class UserProfile(models.Model):
     class Role(models.TextChoices):
@@ -15,9 +17,24 @@ class UserProfile(models.Model):
     profile_picture = models.ImageField(upload_to="profile_pictures/", blank=True)
     reputation_score = models.IntegerField(default=0)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.CONTRIBUTOR)
+    email_verified = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.user.username} profile"
+
+
+class EmailVerificationToken(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="email_tokens")
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Email token for {self.user.username}"
 
 
 class ModeratorAccessRequest(models.Model):
