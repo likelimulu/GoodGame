@@ -10,6 +10,7 @@ import type {
   ApiError,
   GameHub,
   Post,
+  PostModerationReport,
   PostVoteSummary,
 } from "../api/types";
 import { useAuth } from "../context/useAuth";
@@ -39,6 +40,9 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
   const [busyPostId, setBusyPostId] = useState<number | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [reportingPostId, setReportingPostId] = useState<number | null>(null);
+  const [openReportPostId, setOpenReportPostId] = useState<number | null>(null);
+  const [reportReasons, setReportReasons] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -145,6 +149,51 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
           : currentPost,
       ),
     );
+  }
+
+  async function handleReport(post: Post) {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+
+    const reason = reportReasons[post.id]?.trim() ?? "";
+    if (!reason) {
+      const message = "Report reason is required";
+      setError(message);
+      addToast(message, "error");
+      return;
+    }
+
+    setReportingPostId(post.id);
+    setError(null);
+
+    const { status, data } = await api.post<PostModerationReport | ApiError>(
+      `/posts/${post.id}/reports`,
+      { reason },
+    );
+
+    setReportingPostId(null);
+
+    if (status === 201) {
+      setOpenReportPostId(null);
+      setReportReasons((current) => {
+        const next = { ...current };
+        delete next[post.id];
+        return next;
+      });
+      addToast("Post sent to the moderator queue", "success");
+      return;
+    }
+
+    if (status === 401) {
+      navigate("/login");
+      return;
+    }
+
+    const errMsg = (data as ApiError).error ?? "Failed to submit report";
+    setError(errMsg);
+    addToast(errMsg, "error");
   }
 
   return (
@@ -318,11 +367,70 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                           Manage in My Posts
                         </Link>
                       ) : (
-                        <span className="helper compact">
-                          Vote and comment to surface useful posts for the next reader.
-                        </span>
+                        <>
+                          <span className="helper compact">
+                            Vote, comment, or report a thread when it needs moderator attention.
+                          </span>
+                          <button
+                            className="action-link text-link"
+                            type="button"
+                            onClick={() =>
+                              setOpenReportPostId((current) =>
+                                current === post.id ? null : post.id,
+                              )
+                            }
+                          >
+                            {openReportPostId === post.id ? "Hide report form" : "Report post"}
+                          </button>
+                        </>
                       )}
                     </div>
+
+                    {!mineOnly &&
+                    user &&
+                    user.id !== post.author.id &&
+                    openReportPostId === post.id ? (
+                      <div className="report-panel">
+                        <p className="report-title">Flag this post for moderator review</p>
+                        <p className="helper compact">
+                          Use this for spam, untagged spoilers, harassment, or other moderation
+                          issues.
+                        </p>
+                        <div className="field">
+                          <label htmlFor={`report-reason-${post.id}`}>Report Reason</label>
+                          <textarea
+                            id={`report-reason-${post.id}`}
+                            rows={3}
+                            placeholder="Tell moderators what needs review"
+                            value={reportReasons[post.id] ?? ""}
+                            onChange={(event) =>
+                              setReportReasons((current) => ({
+                                ...current,
+                                [post.id]: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="report-actions">
+                          <button
+                            className="btn secondary"
+                            type="button"
+                            disabled={reportingPostId === post.id}
+                            onClick={() => handleReport(post)}
+                          >
+                            {reportingPostId === post.id ? "Submitting…" : "Submit Report"}
+                          </button>
+                          <button
+                            className="btn ghost"
+                            type="button"
+                            disabled={reportingPostId === post.id}
+                            onClick={() => setOpenReportPostId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {!mineOnly && (
                       <PostComments
