@@ -7,9 +7,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [navOverflows, setNavOverflows] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
   const navRef = useRef<HTMLElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const navOverflowsRef = useRef(false);
+  const switchBackThresholdRef = useRef(0);
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -40,11 +44,58 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    const nav = navRef.current;
+    if (!header || !nav) return;
+
+    function check() {
+      if (!navOverflowsRef.current) {
+        // Nav is visible — detect if any item has wrapped to a second row
+        const children = Array.from(nav!.children) as HTMLElement[];
+        if (children.length <= 1) return;
+        const firstTop = children[0].getBoundingClientRect().top;
+        const wrapped = children.some(
+          (child, i) => i > 0 && Math.abs(child.getBoundingClientRect().top - firstTop) > 4
+        );
+        if (wrapped) {
+          // Clone nav to measure its natural (no-wrap) width for the switch-back threshold
+          const clone = nav!.cloneNode(true) as HTMLElement;
+          clone.style.cssText =
+            "position:fixed;top:-9999px;left:-9999px;display:flex;flex-wrap:nowrap;visibility:hidden;pointer-events:none;gap:10px;";
+          document.body.appendChild(clone);
+          const navNaturalWidth = clone.scrollWidth;
+          document.body.removeChild(clone);
+
+          const brand = header!.querySelector(".brand") as HTMLElement;
+          const brandWidth = brand?.offsetWidth ?? 0;
+          switchBackThresholdRef.current = brandWidth + 16 + navNaturalWidth + 40;
+
+          navOverflowsRef.current = true;
+          setNavOverflows(true);
+        }
+      } else {
+        // In hamburger mode — switch back once the header is wide enough
+        if (header!.clientWidth >= switchBackThresholdRef.current) {
+          navOverflowsRef.current = false;
+          setNavOverflows(false);
+        }
+      }
+    }
+
+    const observer = new ResizeObserver(check);
+    observer.observe(header);
+    check();
+    return () => observer.disconnect();
+  }, []);
+
   const isAccount = pathname === "/login" || pathname === "/signup";
   const isFeed = pathname === "/posts";
   const isMyPosts = pathname === "/my-posts";
   const isAdminQueue = pathname === "/admin/moderator-requests";
   const isModeratorWorkspace = pathname === "/moderator";
+  const isDevPortal = pathname === "/developer";
   const isPostStudio =
     pathname === "/posts/create" || pathname.startsWith("/posts/") && pathname !== "/posts";
 
@@ -103,7 +154,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
+      <header ref={headerRef} className={`topbar${navOverflows ? " topbar--overflow" : ""}`}>
         <h1 className="brand">
           <Link className="brand-link" to="/posts">
             GoodGame
@@ -146,6 +197,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           >
             Post Studio
           </Link>
+          {user?.role === "developer" && (
+            <Link
+              className={isDevPortal ? "active" : ""}
+              to="/developer"
+              onClick={() => setMenuOpen(false)}
+            >
+              Developer Portal
+            </Link>
+          )}
           {user ? (
             <div className="nav-avatar-wrapper" ref={dropdownRef}>
               <button
