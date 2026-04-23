@@ -20,7 +20,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!dropdownOpen) return;
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setDropdownOpen(false);
       }
     }
@@ -52,12 +55,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   async function handleResendVerification() {
     setResending(true);
-    const { status } = await api.post<ApiMessage | ApiError>("/auth/resend-verification", {});
+    const { status } = await api.post<ApiMessage | ApiError>(
+      "/auth/resend-verification",
+      {}
+    );
     setResending(false);
     if (status === 200) setResent(true);
   }
 
-  const showVerificationBanner = user && !user.email_verified && pathname !== "/verify-email";
+  const showVerificationBanner =
+    user && !user.email_verified && pathname !== "/verify-email";
   useEffect(() => {
     const header = headerRef.current;
     const nav = navRef.current;
@@ -70,7 +77,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         if (children.length <= 1) return;
         const firstTop = children[0].getBoundingClientRect().top;
         const wrapped = children.some(
-          (child, i) => i > 0 && Math.abs(child.getBoundingClientRect().top - firstTop) > 4
+          (child, i) =>
+            i > 0 && Math.abs(child.getBoundingClientRect().top - firstTop) > 4
         );
         if (wrapped) {
           // Clone nav to measure its natural (no-wrap) width for the switch-back threshold
@@ -83,7 +91,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
           const brand = header!.querySelector(".brand") as HTMLElement;
           const brandWidth = brand?.offsetWidth ?? 0;
-          switchBackThresholdRef.current = brandWidth + 16 + navNaturalWidth + 40;
+          switchBackThresholdRef.current =
+            brandWidth + 16 + navNaturalWidth + 40;
 
           navOverflowsRef.current = true;
           setNavOverflows(true);
@@ -110,64 +119,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isModeratorWorkspace = pathname === "/moderator";
   const isDevPortal = pathname === "/developer";
   const isPostStudio =
-    pathname === "/posts/create" || pathname.startsWith("/posts/") && pathname !== "/posts";
-
-  if (isModeratorWorkspace && user?.role === "moderator") {
-    return (
-      <div className="app-shell">
-        <header className="topbar">
-          <div>
-            <h1 className="brand">
-              <Link className="brand-link" to="/moderator">
-                GoodGame Moderation
-              </Link>
-            </h1>
-            <p className="topbar-copy">
-              Separate moderator workspace for review queues and moderation guidance.
-            </p>
-          </div>
-          <button
-            ref={hamburgerRef}
-            className="nav-hamburger"
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            {menuOpen ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            )}
-          </button>
-          <nav ref={navRef} className={`nav${menuOpen ? " nav--open" : ""}`} aria-label="Moderator workspace">
-            <Link className="active" to="/moderator" onClick={() => setMenuOpen(false)}>
-              Queue
-            </Link>
-            <Link to="/posts" onClick={() => setMenuOpen(false)}>Community Feed</Link>
-            <button
-              className="nav-button"
-              type="button"
-              onClick={() => { logout(); setMenuOpen(false); }}
-            >
-              Sign Out
-            </button>
-          </nav>
-        </header>
-        {children}
-      </div>
-    );
-  }
+    pathname === "/posts/create" ||
+    (pathname.startsWith("/posts/") && pathname !== "/posts");
 
   return (
     <div className="app-shell">
-      <header ref={headerRef} className={`topbar${navOverflows ? " topbar--overflow" : ""}`}>
+      <header
+        ref={headerRef}
+        className={`topbar${navOverflows ? "topbar--overflow" : ""}`}
+      >
         <h1 className="brand">
           <Link className="brand-link" to="/posts">
             GoodGame
@@ -181,25 +141,47 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           onClick={() => setMenuOpen((o) => !o)}
         >
           {menuOpen ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           )}
         </button>
-        <nav ref={navRef} className={`nav${menuOpen ? " nav--open" : ""}`}>
+        <nav ref={navRef} className={`nav${menuOpen ? "nav--open" : ""}`}>
           <span>Game Hubs</span>
-          <Link className={isFeed ? "active" : ""} to="/posts" onClick={() => setMenuOpen(false)}>
+          <Link
+            className={isFeed ? "active" : ""}
+            to="/posts"
+            onClick={() => setMenuOpen(false)}
+          >
             Patch Feed
           </Link>
           {user && (
-            <Link className={isMyPosts ? "active" : ""} to="/my-posts" onClick={() => setMenuOpen(false)}>
+            <Link
+              className={isMyPosts ? "active" : ""}
+              to="/my-posts"
+              onClick={() => setMenuOpen(false)}
+            >
               My Posts
             </Link>
           )}
@@ -219,6 +201,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               Developer Portal
             </Link>
           )}
+          {user?.role === "moderator" && (
+            <Link
+              className={isModeratorWorkspace ? "active" : ""}
+              to="/moderator"
+              onClick={() => setMenuOpen(false)}
+            >
+              Moderator Workspace
+            </Link>
+          )}
+          {user?.role === "admin" && (
+            <Link
+              className={isAdminQueue ? "active" : ""}
+              to="/admin/moderator-requests"
+              onClick={() => setMenuOpen(false)}
+            >
+              Admin Queue
+            </Link>
+          )}
           {user ? (
             <div className="nav-avatar-wrapper" ref={dropdownRef}>
               <button
@@ -227,33 +227,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 aria-expanded={dropdownOpen}
                 onClick={() => setDropdownOpen((o) => !o)}
               >
-                <svg viewBox="0 0 448 512" fill="currentColor" aria-hidden="true">
+                <svg
+                  viewBox="0 0 448 512"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
                   <path d="M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3C0 498.7 13.3 512 29.7 512l388.6 0c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304l-91.4 0z" />
                 </svg>
               </button>
               {dropdownOpen && (
                 <div className="nav-dropdown">
-                  {user.role === "moderator" && (
-                    <Link
-                      className={`nav-dropdown-item ${isModeratorWorkspace ? "active" : ""}`}
-                      to="/moderator"
-                      onClick={() => setDropdownOpen(false)}
-                    >
-                      Moderator Workspace
-                    </Link>
-                  )}
-                  {user.role === "admin" && (
-                    <Link
-                      className={`nav-dropdown-item ${isAdminQueue ? "active" : ""}`}
-                      to="/admin/moderator-requests"
-                      onClick={() => setDropdownOpen(false)}
-                    >
-                      Admin Queue
-                    </Link>
-                  )}
                   <button
                     className="nav-dropdown-item"
-                    onClick={() => { logout(); setDropdownOpen(false); }}
+                    onClick={() => {
+                      logout();
+                      setDropdownOpen(false);
+                    }}
                   >
                     Logout
                   </button>
@@ -261,7 +250,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               )}
             </div>
           ) : (
-            <Link className={isAccount ? "active" : ""} to="/login" onClick={() => setMenuOpen(false)}>
+            <Link
+              className={isAccount ? "active" : ""}
+              to="/login"
+              onClick={() => setMenuOpen(false)}
+            >
               Login
             </Link>
           )}
