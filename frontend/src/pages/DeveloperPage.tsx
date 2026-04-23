@@ -84,16 +84,6 @@ export default function DeveloperPage() {
     };
   }, [posts]);
 
-  const hubBreakdown = useMemo(() => {
-    const counts: Record<number, { name: string; count: number }> = {};
-    for (const post of posts) {
-      const { id, name } = post.game_hub;
-      if (!counts[id]) counts[id] = { name, count: 0 };
-      counts[id].count++;
-    }
-    return Object.values(counts).sort((a, b) => b.count - a.count);
-  }, [posts]);
-
   return (
     <Layout>
       <main className="page-grid developer-grid">
