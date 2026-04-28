@@ -8,6 +8,7 @@ import { api } from "../api/client";
 import type {
   ApiMessage,
   ApiError,
+  DeveloperFeedback,
   GameHub,
   Post,
   PostModerationReport,
@@ -44,6 +45,9 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
   const [reportingPostId, setReportingPostId] = useState<number | null>(null);
   const [openReportPostId, setOpenReportPostId] = useState<number | null>(null);
   const [reportReasons, setReportReasons] = useState<Record<number, string>>({});
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -199,6 +203,51 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
     addToast(errMsg, "error");
   }
 
+  async function handleFeedback() {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+
+    const hubId = Number.parseInt(selectedHubId, 10);
+    if (Number.isNaN(hubId)) {
+      addToast("Select a game hub first", "error");
+      return;
+    }
+
+    const message = feedbackMessage.trim();
+    if (!message) {
+      addToast("Message is required", "error");
+      return;
+    }
+    if (message.length > 2000) {
+      addToast("Message cannot exceed 2000 characters", "error");
+      return;
+    }
+
+    setSubmittingFeedback(true);
+    const { status, data } = await api.post<DeveloperFeedback | ApiError>(
+      `/gamehubs/${hubId}/feedback`,
+      { message },
+    );
+    setSubmittingFeedback(false);
+
+    if (status === 201) {
+      setFeedbackOpen(false);
+      setFeedbackMessage("");
+      addToast("Your message has been sent to the developers!", "success");
+      return;
+    }
+
+    if (status === 401) {
+      navigate("/login");
+      return;
+    }
+
+    const errMsg = (data as ApiError).error ?? "Failed to send feedback";
+    addToast(errMsg, "error");
+  }
+
   return (
     <Layout>
       <main className="page-grid feed-grid">
@@ -220,6 +269,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                 onChange={(e) => {
                   setLoading(true);
                   setError(null);
+                  setFeedbackOpen(false);
                   setSelectedHubId(e.target.value);
                 }}
               >
@@ -253,6 +303,54 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
               <Link className="btn ghost" to="/my-posts">
                 Manage My Posts
               </Link>
+            )}
+
+            {user && !mineOnly && selectedHubId !== "all" && (
+              <button
+                className="btn ghost"
+                type="button"
+                onClick={() => setFeedbackOpen((prev) => !prev)}
+              >
+                {feedbackOpen ? "Hide Feedback Form" : "Send Feedback to Developers"}
+              </button>
+            )}
+
+            {feedbackOpen && selectedHubId !== "all" && (
+              <div className="feedback-form">
+                <p className="feedback-form-title">Send feedback to this game's developers</p>
+                <div className="field">
+                  <label htmlFor="feedback-message">Your Message</label>
+                  <textarea
+                    id="feedback-message"
+                    rows={4}
+                    maxLength={2000}
+                    placeholder="Share your thoughts with the developers..."
+                    value={feedbackMessage}
+                    onChange={(e) => setFeedbackMessage(e.target.value)}
+                  />
+                </div>
+                <div className="report-actions">
+                  <button
+                    className="btn secondary"
+                    type="button"
+                    disabled={submittingFeedback}
+                    onClick={handleFeedback}
+                  >
+                    {submittingFeedback ? "Sending…" : "Send Feedback"}
+                  </button>
+                  <button
+                    className="btn ghost"
+                    type="button"
+                    disabled={submittingFeedback}
+                    onClick={() => {
+                      setFeedbackOpen(false);
+                      setFeedbackMessage("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
 
             <p className="helper">

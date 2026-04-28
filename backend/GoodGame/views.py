@@ -1,5 +1,5 @@
 import secrets
-from datetime import timedelta
+from datetime import datetime as datetime_class, timedelta
 from typing import List, Optional
 
 from ninja import File, Form, Router
@@ -14,6 +14,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from .models import (
+    DeveloperFeedback,
     EmailVerificationToken,
     GameHub,
     ModeratorAccessRequest,
@@ -28,6 +29,8 @@ from .models import (
 from .schemas import (
     AuthUserOut,
     AvatarOut,
+    DeveloperFeedbackIn,
+    DeveloperFeedbackOut,
     EmailVerifyIn,
     ErrorOut,
     GameHubOut,
@@ -706,3 +709,125 @@ def moderate_post(request, post_id: int, data: PostModerationActionIn):
             post.save(update_fields=["status", "updated_at"])
 
     return 200, _get_moderation_queue_item(post.id)
+
+
+# ── Developer Feedback endpoints ──────────────────────────────
+
+
+FEEDBACK_COOLDOWN_SECONDS = 60
+
+
+def _is_developer(user) -> bool:
+    try:
+        return user.profile.role == UserProfile.Role.DEVELOPER
+    except UserProfile.DoesNotExist:
+        return False
+
+
+def _parse_iso_date(value: str):
+    try:
+        return datetime_class.strptime(value, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+@router.post(
+    "/gamehubs/{game_hub_id}/feedback",
+    response={
+        201: DeveloperFeedbackOut,
+        400: ErrorOut,
+        401: ErrorOut,
+        403: ErrorOut,
+        404: ErrorOut,
+        429: ErrorOut,
+    },
+)
+def submit_feedback(request, game_hub_id: int, data: DeveloperFeedbackIn):
+    """Submit feedback for developers of a game hub."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    game_hub = get_object_or_404(GameHub, id=game_hub_id)
+    message = data.message.strip()
+    if not message:
+        return 400, {"error": "Message is required"}
+    if len(message) > DeveloperFeedback.MAX_MESSAGE_LENGTH:
+        return 400, {
+            "error": f"Message cannot exceed {DeveloperFeedback.MAX_MESSAGE_LENGTH} characters"
+        }
+
+    if game_hub.developers.filter(id=request.user.id).exists():
+        return 403, {"error": "You cannot submit feedback to a hub you develop"}
+
+    cooldown_start = timezone.now() - timedelta(seconds=FEEDBACK_COOLDOWN_SECONDS)
+    if DeveloperFeedback.objects.filter(
+        from_user=request.user,
+        game_hub=game_hub,
+        created_at__gte=cooldown_start,
+    ).exists():
+        return 429, {"error": "Please wait a moment before submitting more feedback"}
+
+    feedback = DeveloperFeedback.objects.create(
+        game_hub=game_hub,
+        from_user=request.user,
+        message=message,
+    )
+    return 201, feedback
+
+
+@router.get(
+    "/developer/gamehubs",
+    response={200: List[GameHubOut], 401: ErrorOut, 403: ErrorOut},
+)
+def list_developer_gamehubs(request):
+    """List the game hubs the authenticated developer is assigned to."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if not _is_developer(request.user):
+        return 403, {"error": "Developer access required"}
+
+    return 200, request.user.developed_hubs.all().order_by("name")
+
+
+@router.get(
+    "/developer/feedback",
+    response={200: List[DeveloperFeedbackOut], 400: ErrorOut, 401: ErrorOut, 403: ErrorOut},
+)
+def list_developer_feedback(
+    request,
+    game_hub_id: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """List feedback for the authenticated developer's game hubs."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if not _is_developer(request.user):
+        return 403, {"error": "Developer access required"}
+
+    parsed_from = _parse_iso_date(date_from) if date_from else None
+    parsed_to = _parse_iso_date(date_to) if date_to else None
+    if date_from and parsed_from is None:
+        return 400, {"error": "Invalid date_from (expected YYYY-MM-DD)"}
+    if date_to and parsed_to is None:
+        return 400, {"error": "Invalid date_to (expected YYYY-MM-DD)"}
+    if parsed_from and parsed_to and parsed_from > parsed_to:
+        return 400, {"error": "date_from must be on or before date_to"}
+
+    developer_hub_ids = request.user.developed_hubs.values_list("id", flat=True)
+
+    qs = DeveloperFeedback.objects.filter(
+        game_hub_id__in=developer_hub_ids
+    ).select_related("game_hub", "from_user")
+
+    if game_hub_id is not None:
+        if game_hub_id not in set(developer_hub_ids):
+            return 200, []
+        qs = qs.filter(game_hub_id=game_hub_id)
+
+    if parsed_from:
+        qs = qs.filter(created_at__date__gte=parsed_from)
+    if parsed_to:
+        qs = qs.filter(created_at__date__lte=parsed_to)
+
+    return 200, qs

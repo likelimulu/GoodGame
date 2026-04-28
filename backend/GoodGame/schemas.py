@@ -271,3 +271,22 @@ class ModeratorRequestOut(Schema):
     @staticmethod
     def resolve_reviewed_by_username(obj):
         return obj.reviewed_by.username if obj.reviewed_by else None
+
+
+# ── Developer Feedback schemas ─────────────────────────────────────────────────
+
+
+class DeveloperFeedbackIn(Schema):
+    message: str
+
+
+class DeveloperFeedbackOut(Schema):
+    id: int
+    game_hub: GameHubOut
+    from_username: str
+    message: str
+    created_at: datetime
+
+    @staticmethod
+    def resolve_from_username(obj):
+        return obj.from_user.username if obj.from_user else "[deleted]"

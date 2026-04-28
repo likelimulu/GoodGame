@@ -114,3 +114,11 @@ export interface PostModerationReport {
   status: string;
   created_at: string;
 }
+
+export interface DeveloperFeedback {
+  id: number;
+  game_hub: GameHub;
+  from_username: string;
+  message: string;
+  created_at: string;
+}

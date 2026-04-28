@@ -1877,6 +1877,162 @@
     font-weight: 700;
   }
 
+  .feedback-form {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 2px solid rgba(90, 140, 200, 0.25);
+    border-radius: 20px;
+    background: rgba(240, 246, 255, 0.78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+
+  .feedback-form-title {
+    margin: 0;
+    color: var(--color-gg-ink);
+    font-family: var(--font-bungee);
+    font-size: clamp(16px, 1.6vw, 22px);
+    line-height: 1.15;
+    text-transform: uppercase;
+    word-break: break-word;
+  }
+
+  .feedback-form .field textarea {
+    min-height: 96px;
+    resize: vertical;
+  }
+
+  .feedback-form .report-actions {
+    gap: 8px;
+  }
+
+  .feedback-form .report-actions .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .feedback-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    align-items: end;
+    margin: 4px 0 12px;
+  }
+
+  .feedback-filters .field {
+    margin: 0;
+    min-width: 0;
+  }
+
+  .feedback-filters .field input,
+  .feedback-filters .field select {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    font-size: 18px;
+    padding: 10px 14px;
+    min-height: 48px;
+    border-radius: 14px;
+  }
+
+  .feedback-filters .field label {
+    font-size: 14px;
+  }
+
+  .feedback-filters > .btn {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .feedback-queue-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .feedback-queue-item {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+    border: 3px solid #d8bf88;
+    border-radius: 20px;
+    background: rgba(255, 251, 241, 0.9);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  .feedback-queue-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .feedback-queue-meta .post-hub {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+
+  .feedback-queue-meta .helper {
+    flex: 1 1 auto;
+    text-align: right;
+    min-width: 0;
+  }
+
+  .feedback-queue-message {
+    margin: 0;
+    color: var(--color-gg-ink);
+    font-size: 17px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 720px) {
+    .feedback-filters {
+      gap: 10px;
+    }
+
+    .feedback-filters > .btn {
+      width: 100%;
+      justify-self: stretch;
+    }
+
+    .feedback-queue-item {
+      padding: 14px;
+      border-radius: 18px;
+    }
+
+    .feedback-queue-meta {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+
+    .feedback-queue-meta .helper {
+      text-align: left;
+    }
+
+    .feedback-queue-message {
+      font-size: 16px;
+    }
+
+    .feedback-form {
+      padding: 14px;
+      border-radius: 18px;
+    }
+
+    .feedback-form .report-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .feedback-form .report-actions .btn {
+      width: 100%;
+    }
+  }
+
   @media (max-width: 1000px) {
     .app-shell {
       padding: 12px;

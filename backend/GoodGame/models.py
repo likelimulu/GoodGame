@@ -77,6 +77,11 @@ class GameHub(models.Model):
     """A dedicated discussion area for a specific game."""
     name = models.CharField(max_length=120, unique=True)
     slug = models.SlugField(max_length=120, unique=True)
+    developers = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="developed_hubs",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -208,6 +213,32 @@ class PostModerationReport(models.Model):
 
     def __str__(self):
         return f"Report {self.id} on post {self.post_id} ({self.status})"
+
+
+class DeveloperFeedback(models.Model):
+    """Feedback submitted by a user targeting developers of a game hub."""
+    MAX_MESSAGE_LENGTH = 2000
+
+    game_hub = models.ForeignKey(GameHub, on_delete=models.CASCADE, related_name="feedback")
+    from_user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submitted_feedback",
+    )
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["game_hub", "-created_at"]),
+        ]
+
+    def __str__(self):
+        from_label = self.from_user.username if self.from_user else "[deleted]"
+        return f"Feedback from {from_label} on {self.game_hub.name}"
 
 
 class PostModerationAction(models.Model):

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import Spinner from "../components/Spinner";
 import { api } from "../api/client";
-import type { ApiError, GameHub, Post } from "../api/types";
+import type { ApiError, DeveloperFeedback, GameHub, Post } from "../api/types";
 
 function formatMetric(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -26,18 +26,30 @@ function getStatusClass(status: string) {
 export default function DeveloperPage() {
   const navigate = useNavigate();
   const [posts, setPosts] = useState<Post[]>([]);
+  const [developerHubs, setDeveloperHubs] = useState<GameHub[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [feedback, setFeedback] = useState<DeveloperFeedback[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(true);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [feedbackHubId, setFeedbackHubId] = useState("all");
+  const [feedbackDateFrom, setFeedbackDateFrom] = useState("");
+  const [feedbackDateTo, setFeedbackDateTo] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
 
     Promise.all([
-      api.get<GameHub[]>("/gamehubs", signal),
+      api.get<GameHub[] | ApiError>("/developer/gamehubs", signal),
       api.get<Post[] | ApiError>("/posts?mine=true", signal),
     ])
-      .then(([, postsRes]) => {
+      .then(([hubsRes, postsRes]) => {
+        if (signal.aborted) return;
+        if (hubsRes.status === 200 && Array.isArray(hubsRes.data)) {
+          setDeveloperHubs(hubsRes.data as GameHub[]);
+        }
         if (postsRes.status === 200 && Array.isArray(postsRes.data)) {
           setPosts(
             [...(postsRes.data as Post[])].sort(
@@ -54,10 +66,47 @@ export default function DeveloperPage() {
       .catch((err) => {
         if (err.name !== "AbortError") setError("Failed to load posts");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!signal.aborted) setLoading(false);
+      });
 
     return () => controller.abort();
   }, [navigate]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const params = new URLSearchParams();
+    if (feedbackHubId !== "all") params.set("game_hub_id", feedbackHubId);
+    if (feedbackDateFrom) params.set("date_from", feedbackDateFrom);
+    if (feedbackDateTo) params.set("date_to", feedbackDateTo);
+    const query = params.toString();
+    const path = query ? `/developer/feedback?${query}` : "/developer/feedback";
+
+    setFeedbackLoading(true);
+    setFeedbackError(null);
+    api.get<DeveloperFeedback[] | ApiError>(path, signal)
+      .then((res) => {
+        if (signal.aborted) return;
+        if (res.status === 200 && Array.isArray(res.data)) {
+          setFeedback(res.data as DeveloperFeedback[]);
+        } else if (res.status === 401) {
+          navigate("/login");
+        } else if (res.status !== 0) {
+          setFeedback([]);
+          setFeedbackError((res.data as ApiError).error ?? "Failed to load feedback");
+        }
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") setFeedbackError("Failed to load feedback");
+      })
+      .finally(() => {
+        if (!signal.aborted) setFeedbackLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [feedbackHubId, feedbackDateFrom, feedbackDateTo, navigate]);
 
   const metrics = useMemo(() => {
     const totalPosts = posts.length;
@@ -255,6 +304,99 @@ export default function DeveloperPage() {
                 </div>
               )}
             </>
+          )}
+        </section>
+        <section className="form-card feed-card">
+          <p className="panel-tag">Player Feedback</p>
+          <h2 className="section-title">Feedback Queue</h2>
+          <p className="helper">
+            Messages submitted by players for your published games.
+          </p>
+
+          <div className="feedback-filters">
+            <div className="field">
+              <label htmlFor="feedback-hub-filter">Game Hub</label>
+              <select
+                id="feedback-hub-filter"
+                value={feedbackHubId}
+                onChange={(e) => setFeedbackHubId(e.target.value)}
+                disabled={developerHubs.length === 0}
+              >
+                <option value="all">All Hubs</option>
+                {developerHubs.map((hub) => (
+                  <option key={hub.id} value={hub.id}>
+                    {hub.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="feedback-date-from">From</label>
+              <input
+                id="feedback-date-from"
+                type="date"
+                value={feedbackDateFrom}
+                onChange={(e) => setFeedbackDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="feedback-date-to">To</label>
+              <input
+                id="feedback-date-to"
+                type="date"
+                value={feedbackDateTo}
+                onChange={(e) => setFeedbackDateTo(e.target.value)}
+              />
+            </div>
+            {(feedbackDateFrom || feedbackDateTo || feedbackHubId !== "all") && (
+              <button
+                className="btn ghost"
+                type="button"
+                onClick={() => {
+                  setFeedbackHubId("all");
+                  setFeedbackDateFrom("");
+                  setFeedbackDateTo("");
+                }}
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+
+          {feedbackError && <p className="form-error">{feedbackError}</p>}
+
+          {feedbackLoading ? (
+            <div className="feed-empty-state">
+              <Spinner text="Loading feedback…" />
+            </div>
+          ) : developerHubs.length === 0 ? (
+            <div className="feed-empty-state">
+              <h3 className="empty-title">No Hubs Assigned</h3>
+              <p className="helper">
+                You aren't listed as a developer on any game hubs yet. Contact an admin to be added.
+              </p>
+            </div>
+          ) : feedback.length === 0 ? (
+            <div className="feed-empty-state">
+              <h3 className="empty-title">No Feedback Yet</h3>
+              <p className="helper">
+                Feedback from players will appear here once they submit it from a game hub page.
+              </p>
+            </div>
+          ) : (
+            <div className="feedback-queue-list">
+              {feedback.map((item) => (
+                <article className="feedback-queue-item" key={item.id}>
+                  <div className="feedback-queue-meta">
+                    <span className="post-hub">{item.game_hub.name}</span>
+                    <span className="helper compact">
+                      from {item.from_username} · {formatDate(item.created_at)}
+                    </span>
+                  </div>
+                  <p className="feedback-queue-message">{item.message}</p>
+                </article>
+              ))}
+            </div>
           )}
         </section>
       </main>
