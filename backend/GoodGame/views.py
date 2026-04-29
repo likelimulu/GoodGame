@@ -48,6 +48,7 @@ from .schemas import (
     PostVoteIn,
     PostVoteSummaryOut,
     PostUpdateIn,
+    SearchOut,
     SignupIn,
     SignupOut,
     ModerationQueueItemOut,
@@ -56,6 +57,10 @@ from .schemas import (
 )
 
 router = Router()
+
+SEARCH_MIN_QUERY_LENGTH = 2
+SEARCH_POST_LIMIT = 20
+SEARCH_GROUP_LIMIT = 8
 
 
 # ── Auth endpoints ────────────────────────────────────────────
@@ -267,6 +272,58 @@ def update_avatar(request, file: UploadedFile = File(...)):
 def list_gamehubs(request):
     """Return all available game hubs (for the forum dropdown)."""
     return GameHub.objects.all()
+
+
+# ── Search endpoint ───────────────────────────────────────────
+
+
+@router.get("/search", response=SearchOut)
+def search(request, q: str = ""):
+    """Search public content without including comments."""
+    query = q.strip()
+    empty_results = {
+        "posts": [],
+        "game_hubs": [],
+        "tags": [],
+        "users": [],
+    }
+    if len(query) < SEARCH_MIN_QUERY_LENGTH:
+        return empty_results
+
+    game_hubs = GameHub.objects.filter(
+        Q(name__icontains=query) | Q(slug__icontains=query)
+    ).order_by("name")[:SEARCH_GROUP_LIMIT]
+    tags = Tag.objects.filter(name__icontains=query).order_by("name")[:SEARCH_GROUP_LIMIT]
+    users = (
+        User.objects.filter(
+            username__icontains=query,
+            posts__status=Post.Status.PUBLISHED,
+        )
+        .select_related("profile")
+        .distinct()
+        .order_by("username")[:SEARCH_GROUP_LIMIT]
+    )
+    posts = (
+        _annotate_post_stats(_posts_with_related_data())
+        .filter(status=Post.Status.PUBLISHED)
+        .filter(
+            Q(title__icontains=query)
+            | Q(body__icontains=query)
+            | Q(game_hub__name__icontains=query)
+            | Q(game_hub__slug__icontains=query)
+            | Q(tags__name__icontains=query)
+            | Q(author__username__icontains=query)
+        )
+        .distinct()
+        .order_by("-vote_score", "-created_at")[:SEARCH_POST_LIMIT]
+    )
+
+    return {
+        "posts": _attach_current_user_vote(posts, request.user),
+        "game_hubs": list(game_hubs),
+        "tags": list(tags),
+        "users": list(users),
+    }
 
 
 # ── Post endpoints ────────────────────────────────────────────

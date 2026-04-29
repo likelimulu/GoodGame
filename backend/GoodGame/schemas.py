@@ -167,6 +167,35 @@ class PostOut(Schema):
             return False
 
 
+class SearchUserOut(Schema):
+    id: int
+    username: str
+    reputation_score: int = 0
+    is_trusted: bool = False
+
+    @staticmethod
+    def resolve_reputation_score(obj):
+        try:
+            return obj.profile.reputation_score
+        except Exception:
+            return 0
+
+    @staticmethod
+    def resolve_is_trusted(obj):
+        from .models import HIGH_REPUTATION_THRESHOLD
+        try:
+            return obj.profile.reputation_score >= HIGH_REPUTATION_THRESHOLD
+        except Exception:
+            return False
+
+
+class SearchOut(Schema):
+    posts: List[PostOut]
+    game_hubs: List[GameHubOut]
+    tags: List[TagOut]
+    users: List[SearchUserOut]
+
+
 class PostVoteIn(Schema):
     value: Literal[-1, 0, 1]
 

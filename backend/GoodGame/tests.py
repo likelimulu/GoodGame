@@ -339,6 +339,168 @@ class GameHubApiTests(TestCase):
         self.assertIn("Minecraft Hub", names)
 
 
+class SearchApiTests(TestCase):
+    def setUp(self):
+        self.author = User.objects.create_user(
+            username="riftsage",
+            password="pass-123",
+            email="riftsage@example.com",
+        )
+        self.viewer = User.objects.create_user(
+            username="viewer",
+            password="pass-456",
+            email="viewer@example.com",
+        )
+        self.hub = GameHub.objects.create(name="Crystal Rift", slug="crystal-rift")
+        self.other_hub = GameHub.objects.create(name="Aurora Arena", slug="aurora-arena")
+
+    def _login(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "viewer", "password": "pass-456"}),
+            content_type="application/json",
+        )
+
+    def test_search_short_or_empty_query_returns_empty_groups(self):
+        empty_response = self.client.get("/api/search")
+        short_response = self.client.get("/api/search?q=x")
+
+        expected = {"posts": [], "game_hubs": [], "tags": [], "users": []}
+        self.assertEqual(empty_response.status_code, 200)
+        self.assertEqual(empty_response.json(), expected)
+        self.assertEqual(short_response.status_code, 200)
+        self.assertEqual(short_response.json(), expected)
+
+    def test_search_posts_by_title_and_body_without_comments(self):
+        title_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Zephyr live patch",
+            body="Ranked notes",
+            status=Post.Status.PUBLISHED,
+        )
+        body_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Body search",
+            body="The zephyr route changed overnight.",
+            status=Post.Status.PUBLISHED,
+        )
+        Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Zephyr draft leak",
+            body="Not public",
+            status=Post.Status.DRAFT,
+        )
+        Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Zephyr deleted leak",
+            body="Removed",
+            status=Post.Status.DELETED,
+        )
+        comment_only_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Ordinary thread",
+            body="No matching post text",
+            status=Post.Status.PUBLISHED,
+        )
+        PostComment.objects.create(
+            post=comment_only_post,
+            author=self.viewer,
+            body="Zephyr only appears in this comment.",
+        )
+
+        response = self.client.get("/api/search?q=zephyr")
+
+        self.assertEqual(response.status_code, 200)
+        result_ids = {post["id"] for post in response.json()["posts"]}
+        self.assertIn(title_post.id, result_ids)
+        self.assertIn(body_post.id, result_ids)
+        self.assertNotIn(comment_only_post.id, result_ids)
+        result_titles = {post["title"] for post in response.json()["posts"]}
+        self.assertNotIn("Zephyr draft leak", result_titles)
+        self.assertNotIn("Zephyr deleted leak", result_titles)
+
+    def test_search_tag_name_returns_tag_and_related_published_post_once(self):
+        raid_tag = Tag.objects.create(name="Raid")
+        raiders_tag = Tag.objects.create(name="Raiders")
+        tagged_post = Post.objects.create(
+            game_hub=self.other_hub,
+            author=self.author,
+            title="Endgame routes",
+            body="Coordinate squads before launch.",
+            status=Post.Status.PUBLISHED,
+        )
+        tagged_post.tags.set([raid_tag, raiders_tag])
+
+        response = self.client.get("/api/search?q=raid")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Raid", {tag["name"] for tag in response.json()["tags"]})
+        result_ids = [post["id"] for post in response.json()["posts"]]
+        self.assertEqual(result_ids.count(tagged_post.id), 1)
+
+    def test_search_game_hub_name_returns_hub_and_related_published_posts(self):
+        hub_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Rotation notes",
+            body="Coordinate the opener.",
+            status=Post.Status.PUBLISHED,
+        )
+        draft_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Private rotation",
+            body="Draft notes",
+            status=Post.Status.DRAFT,
+        )
+
+        response = self.client.get("/api/search?q=crystal")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.hub.id, {hub["id"] for hub in response.json()["game_hubs"]})
+        result_ids = {post["id"] for post in response.json()["posts"]}
+        self.assertIn(hub_post.id, result_ids)
+        self.assertNotIn(draft_post.id, result_ids)
+
+    def test_search_author_username_returns_user_and_related_published_posts(self):
+        authored_post = Post.objects.create(
+            game_hub=self.other_hub,
+            author=self.author,
+            title="Meta setup",
+            body="Open with utility.",
+            status=Post.Status.PUBLISHED,
+        )
+
+        response = self.client.get("/api/search?q=riftsage")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.author.id, {user["id"] for user in response.json()["users"]})
+        self.assertIn(authored_post.id, {post["id"] for post in response.json()["posts"]})
+
+    def test_search_works_logged_in_with_current_user_vote(self):
+        voted_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Obsidian timing",
+            body="Hold the lane.",
+            status=Post.Status.PUBLISHED,
+        )
+        PostVote.objects.create(post=voted_post, user=self.viewer, value=PostVote.Value.UPVOTE)
+
+        self._login()
+        response = self.client.get("/api/search?q=obsidian")
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()["posts"][0]
+        self.assertEqual(result["id"], voted_post.id)
+        self.assertEqual(result["current_user_vote"], 1)
+
+
 class PostApiTests(TestCase):
     """Tests for the Post CRUD API (GG-52)."""
 

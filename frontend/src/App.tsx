@@ -14,6 +14,7 @@ import ModeratorWorkspacePage from "./pages/ModeratorWorkspacePage";
 import ContentRulesPage from "./pages/ContentRulesPage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
 import DeveloperPage from "./pages/DeveloperPage";
+import SearchPage from "./pages/SearchPage";
 import NotFoundPage from "./pages/error/NotFoundPage";
 import ErrorPage from "./pages/error/ErrorPage";
 
@@ -55,6 +56,7 @@ function App() {
         <ToastProvider>
           <BrowserRouter>
             <Routes>
+              <Route path="/" element={<Navigate to="/posts" replace />} />
               <Route path="/posts" element={<PostsFeedPage />} />
               <Route
                 path="/my-posts"
@@ -66,6 +68,7 @@ function App() {
               />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
+              <Route path="/search" element={<SearchPage />} />
               <Route path="/content-rules" element={<ContentRulesPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route
