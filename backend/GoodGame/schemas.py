@@ -221,6 +221,35 @@ class ModerationQueueItemOut(Schema):
     latest_action_at: Optional[datetime] = None
 
 
+class NotificationOut(Schema):
+    id: int
+    type: str
+    title: str
+    message: str
+    is_read: bool
+    created_at: datetime
+    actor_username: Optional[str] = None
+    post_id: Optional[int] = None
+    post_title: Optional[str] = None
+    post_status: Optional[str] = None
+
+    @staticmethod
+    def resolve_actor_username(obj):
+        return obj.actor.username if obj.actor else None
+
+    @staticmethod
+    def resolve_post_id(obj):
+        return obj.post_id
+
+    @staticmethod
+    def resolve_post_title(obj):
+        return obj.post.title if obj.post else None
+
+    @staticmethod
+    def resolve_post_status(obj):
+        return obj.post.status if obj.post else None
+
+
 # ── User profile schemas ───────────────────────────────────────────────────────
 
 

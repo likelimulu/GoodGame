@@ -297,7 +297,7 @@ export default function ModeratorWorkspacePage() {
                               <textarea
                                 id={`moderation-note-${item.id}`}
                                 rows={3}
-                                placeholder="Internal note for the moderation record"
+                                placeholder="Add context for this moderation action"
                                 value={note}
                                 onChange={(event) =>
                                   setActionNotes((current) => ({
@@ -306,6 +306,10 @@ export default function ModeratorWorkspacePage() {
                                   }))
                                 }
                               />
+                              <p className="helper compact">
+                                Warn/remove notes are included in author notifications.
+                                Escalate/dismiss notes stay internal.
+                              </p>
                             </div>
 
                             <div className="moderation-action-grid">

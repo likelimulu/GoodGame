@@ -47,7 +47,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [menuOpen]);
 
   useEffect(() => {
-    setMenuOpen(false);
+    const frame = window.requestAnimationFrame(() => setMenuOpen(false));
+    return () => window.cancelAnimationFrame(frame);
   }, [pathname]);
 
   const [resending, setResending] = useState(false);
@@ -115,6 +116,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isAccount = pathname === "/login" || pathname === "/signup";
   const isFeed = pathname === "/posts";
   const isMyPosts = pathname === "/my-posts";
+  const isNotifications = pathname === "/notifications";
   const isAdminQueue = pathname === "/admin/moderator-requests";
   const isModeratorWorkspace = pathname === "/moderator";
   const isDevPortal = pathname === "/developer";
@@ -183,6 +185,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               onClick={() => setMenuOpen(false)}
             >
               My Posts
+            </Link>
+          )}
+          {user && (
+            <Link
+              className={isNotifications ? "active" : ""}
+              to="/notifications"
+              onClick={() => setMenuOpen(false)}
+            >
+              Notifications
             </Link>
           )}
           <Link

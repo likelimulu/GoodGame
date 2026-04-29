@@ -4,6 +4,7 @@ from .models import (
     DeveloperFeedback,
     GameHub,
     ModeratorAccessRequest,
+    Notification,
     Post,
     PostModerationAction,
     PostModerationReport,
@@ -75,3 +76,10 @@ class DeveloperFeedbackAdmin(admin.ModelAdmin):
     list_filter = ("game_hub",)
     search_fields = ("game_hub__name", "from_user__username", "message")
     readonly_fields = ("created_at",)
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("title", "recipient", "type", "is_read", "created_at")
+    list_filter = ("type", "is_read")
+    search_fields = ("title", "message", "recipient__username", "post__title")
