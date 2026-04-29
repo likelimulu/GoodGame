@@ -1,7 +1,8 @@
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
+from django.utils.text import slugify
 
-from GoodGame.models import UserProfile
+from GoodGame.models import GameHub, UserProfile
 
 TEST_PASSWORD = "TestPass123!"
 
@@ -9,9 +10,9 @@ TEST_USERS = [
     {"username": "test_contributor_1", "role": UserProfile.Role.CONTRIBUTOR},
     {"username": "test_contributor_2", "role": UserProfile.Role.CONTRIBUTOR},
     {"username": "test_contributor_3", "role": UserProfile.Role.CONTRIBUTOR},
-    {"username": "test_developer_nintendo", "role": UserProfile.Role.DEVELOPER},
-    {"username": "test_developer_bethesda", "role": UserProfile.Role.DEVELOPER},
-    {"username": "test_developer_sony", "role": UserProfile.Role.DEVELOPER},
+    {"username": "test_developer_nintendo", "role": UserProfile.Role.DEVELOPER, "hub": "Nintendo"},
+    {"username": "test_developer_bethesda", "role": UserProfile.Role.DEVELOPER, "hub": "Bethesda"},
+    {"username": "test_developer_sony", "role": UserProfile.Role.DEVELOPER, "hub": "Sony"},
     {"username": "test_admin_1", "role": UserProfile.Role.ADMIN},
     {"username": "test_admin_2", "role": UserProfile.Role.ADMIN},
     {"username": "test_admin_3", "role": UserProfile.Role.ADMIN},
@@ -51,6 +52,14 @@ class Command(BaseCommand):
                 profile.save()
                 if not was_created:
                     updated += 1
+
+            if "hub" in entry:
+                hub_name = entry["hub"]
+                hub, _ = GameHub.objects.get_or_create(
+                    slug=slugify(hub_name),
+                    defaults={"name": hub_name},
+                )
+                hub.developers.add(user)
 
         self.stdout.write(
             self.style.SUCCESS(
