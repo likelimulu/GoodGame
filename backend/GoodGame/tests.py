@@ -1,13 +1,16 @@
 import json
+from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.conf import settings
-from django.test import TestCase
+from django.test import Client, TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 
 from .models import (
     GameHub,
     ModeratorAccessRequest,
+    Notification,
     Post,
     PostComment,
     PostModerationAction,
@@ -1103,6 +1106,7 @@ class PostModerationApiTests(TestCase):
         self.assertTrue(
             PostModerationReport.objects.filter(post=self.post, reporter=self.reporter).exists()
         )
+        self.assertEqual(Notification.objects.count(), 0)
 
     def test_user_cannot_report_own_post(self):
         self._login("author", "author-pass-123")
@@ -1163,6 +1167,84 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(response.json()[0]["report_status"], PostModerationReport.Status.OPEN)
         self.assertEqual(response.json()[0]["latest_report_reason"], "Missing spoiler warning")
 
+    def test_queue_filters_return_current_status_buckets(self):
+        statuses = [
+            PostModerationReport.Status.OPEN,
+            PostModerationReport.Status.ESCALATED,
+            PostModerationReport.Status.ACTIONED,
+            PostModerationReport.Status.DISMISSED,
+        ]
+        posts_by_status = {}
+        base_time = timezone.now()
+
+        for index, status in enumerate(statuses):
+            post = Post.objects.create(
+                game_hub=self.hub,
+                author=self.author,
+                title=f"{status} queue post",
+                body=f"{status} queue body",
+                status=Post.Status.PUBLISHED,
+            )
+            report = PostModerationReport.objects.create(
+                post=post,
+                reporter=self.reporter,
+                reason=f"{status} report",
+                status=status,
+            )
+            PostModerationReport.objects.filter(id=report.id).update(
+                created_at=base_time + timedelta(minutes=index)
+            )
+            posts_by_status[status] = post
+
+        self._login("moderator", "mod-pass-123")
+
+        for status, expected_post in posts_by_status.items():
+            response = self.client.get(f"/api/moderation/queue?status={status}")
+
+            self.assertEqual(response.status_code, 200)
+            items = response.json()
+            self.assertEqual({item["id"] for item in items}, {expected_post.id})
+            self.assertTrue(all(item["report_status"] == status for item in items))
+
+        all_response = self.client.get("/api/moderation/queue?status=all")
+        self.assertEqual(all_response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in all_response.json()},
+            {post.id for post in posts_by_status.values()},
+        )
+
+    def test_queue_filter_uses_latest_report_status_for_posts_with_old_reports(self):
+        base_time = timezone.now()
+        old_report = PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Old resolved report",
+            status=PostModerationReport.Status.ACTIONED,
+        )
+        new_report = PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Fresh report after prior action",
+            status=PostModerationReport.Status.OPEN,
+        )
+        PostModerationReport.objects.filter(id=old_report.id).update(created_at=base_time)
+        PostModerationReport.objects.filter(id=new_report.id).update(
+            created_at=base_time + timedelta(minutes=1)
+        )
+        self._login("moderator", "mod-pass-123")
+
+        open_response = self.client.get("/api/moderation/queue?status=open")
+        actioned_response = self.client.get("/api/moderation/queue?status=actioned")
+
+        self.assertEqual(open_response.status_code, 200)
+        self.assertEqual(actioned_response.status_code, 200)
+        self.assertEqual(len(open_response.json()), 1)
+        self.assertEqual(open_response.json()[0]["id"], self.post.id)
+        self.assertEqual(open_response.json()[0]["report_status"], PostModerationReport.Status.OPEN)
+        self.assertEqual(open_response.json()[0]["latest_report_reason"], "Fresh report after prior action")
+        self.assertEqual(open_response.json()[0]["report_count"], 2)
+        self.assertEqual(actioned_response.json(), [])
+
     def test_warn_action_resolves_open_reports(self):
         PostModerationReport.objects.create(
             post=self.post,
@@ -1185,6 +1267,118 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ACTIONED)
         self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.WARN)
 
+        notification = Notification.objects.get(recipient=self.author)
+        self.assertEqual(notification.type, Notification.Type.MODERATION_WARNING)
+        self.assertEqual(notification.actor, self.moderator)
+        self.assertEqual(notification.post, self.post)
+        self.assertEqual(notification.moderation_action.action, PostModerationAction.Action.WARN)
+        self.assertIn("Added moderator warning", notification.message)
+
+    def test_author_session_sees_warn_and_remove_notifications_without_relogin(self):
+        warning_report = PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Missing spoiler warning",
+        )
+        removal_post = Post.objects.create(
+            game_hub=self.hub,
+            author=self.author,
+            title="Spam strategy repost",
+            body="Repeated spam content.",
+            status=Post.Status.PUBLISHED,
+        )
+        PostModerationReport.objects.create(
+            post=removal_post,
+            reporter=self.reporter,
+            reason="Spam repost",
+        )
+        author_client = Client()
+        moderator_client = Client()
+        author_client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "author", "password": "author-pass-123"}),
+            content_type="application/json",
+        )
+        moderator_client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "moderator", "password": "mod-pass-123"}),
+            content_type="application/json",
+        )
+
+        before_response = author_client.get("/api/notifications")
+        self.assertEqual(before_response.status_code, 200)
+        self.assertEqual(before_response.json(), [])
+
+        warn_response = moderator_client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "warn", "note": "Visible warning note"}),
+            content_type="application/json",
+        )
+        after_warn_response = author_client.get("/api/notifications")
+
+        self.assertEqual(warn_response.status_code, 200)
+        warning_report.refresh_from_db()
+        self.assertEqual(warning_report.status, PostModerationReport.Status.ACTIONED)
+        self.assertEqual(after_warn_response.status_code, 200)
+        self.assertEqual(len(after_warn_response.json()), 1)
+        self.assertEqual(
+            after_warn_response.json()[0]["type"],
+            Notification.Type.MODERATION_WARNING,
+        )
+        self.assertIn("Visible warning note", after_warn_response.json()[0]["message"])
+
+        remove_response = moderator_client.post(
+            f"/api/moderation/posts/{removal_post.id}/actions",
+            data=json.dumps({"action": "remove", "note": "Visible removal note"}),
+            content_type="application/json",
+        )
+        after_remove_response = author_client.get("/api/notifications")
+
+        self.assertEqual(remove_response.status_code, 200)
+        removal_post.refresh_from_db()
+        self.assertEqual(removal_post.status, Post.Status.DELETED)
+        self.assertEqual(after_remove_response.status_code, 200)
+        self.assertEqual(len(after_remove_response.json()), 2)
+        notification_types = {
+            notification["type"] for notification in after_remove_response.json()
+        }
+        self.assertEqual(
+            notification_types,
+            {
+                Notification.Type.MODERATION_WARNING,
+                Notification.Type.POST_REMOVED,
+            },
+        )
+        self.assertTrue(
+            any(
+                "Visible removal note" in notification["message"]
+                for notification in after_remove_response.json()
+            )
+        )
+
+    def test_retried_warn_action_does_not_create_duplicate_notification(self):
+        PostModerationReport.objects.create(
+            post=self.post,
+            reporter=self.reporter,
+            reason="Missing spoiler warning",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        first_response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "warn", "note": "Added moderator warning"}),
+            content_type="application/json",
+        )
+        retry_response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "warn", "note": "Added moderator warning"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(retry_response.status_code, 409)
+        self.assertEqual(Notification.objects.filter(recipient=self.author).count(), 1)
+
     def test_escalate_action_marks_reports_escalated(self):
         PostModerationReport.objects.create(
             post=self.post,
@@ -1204,6 +1398,7 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(report.status, PostModerationReport.Status.ESCALATED)
         self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ESCALATED)
         self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.ESCALATE)
+        self.assertEqual(Notification.objects.count(), 0)
 
     def test_remove_action_soft_deletes_post(self):
         PostModerationReport.objects.create(
@@ -1227,6 +1422,13 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(response.json()["report_status"], PostModerationReport.Status.ACTIONED)
         self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.REMOVE)
 
+        notification = Notification.objects.get(recipient=self.author)
+        self.assertEqual(notification.type, Notification.Type.POST_REMOVED)
+        self.assertEqual(notification.actor, self.moderator)
+        self.assertEqual(notification.post, self.post)
+        self.assertEqual(notification.post.status, Post.Status.DELETED)
+        self.assertIn("Removed from public feed", notification.message)
+
     def test_dismiss_action_clears_report_without_deleting_post(self):
         PostModerationReport.objects.create(
             post=self.post,
@@ -1248,3 +1450,76 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(self.post.status, Post.Status.PUBLISHED)
         self.assertEqual(response.json()["report_status"], PostModerationReport.Status.DISMISSED)
         self.assertEqual(response.json()["latest_action"], PostModerationAction.Action.DISMISS)
+        self.assertEqual(Notification.objects.count(), 0)
+
+    def test_notification_list_requires_authentication(self):
+        response = self.client.get("/api/notifications")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_notification_list_returns_only_current_user_notifications(self):
+        own_notification = Notification.objects.create(
+            recipient=self.author,
+            actor=self.moderator,
+            post=self.post,
+            type=Notification.Type.MODERATION_WARNING,
+            title="Moderator warning",
+            message="Your post received a warning.",
+        )
+        Notification.objects.create(
+            recipient=self.reporter,
+            actor=self.moderator,
+            post=self.post,
+            type=Notification.Type.POST_REMOVED,
+            title="Post removed",
+            message="Another user's notification.",
+        )
+        self._login("author", "author-pass-123")
+
+        response = self.client.get("/api/notifications")
+
+        self.assertEqual(response.status_code, 200)
+        notifications = response.json()
+        self.assertEqual(len(notifications), 1)
+        self.assertEqual(notifications[0]["id"], own_notification.id)
+        self.assertEqual(notifications[0]["type"], Notification.Type.MODERATION_WARNING)
+        self.assertEqual(notifications[0]["actor_username"], "moderator")
+        self.assertEqual(notifications[0]["post_id"], self.post.id)
+        self.assertEqual(notifications[0]["post_title"], self.post.title)
+        self.assertEqual(notifications[0]["post_status"], Post.Status.PUBLISHED)
+        self.assertIn("created_at", notifications[0])
+
+    def test_user_can_mark_own_notification_read(self):
+        notification = Notification.objects.create(
+            recipient=self.author,
+            actor=self.moderator,
+            post=self.post,
+            type=Notification.Type.MODERATION_WARNING,
+            title="Moderator warning",
+            message="Your post received a warning.",
+        )
+        self._login("author", "author-pass-123")
+
+        response = self.client.post(f"/api/notifications/{notification.id}/read")
+
+        self.assertEqual(response.status_code, 200)
+        notification.refresh_from_db()
+        self.assertTrue(notification.is_read)
+        self.assertTrue(response.json()["is_read"])
+
+    def test_user_cannot_mark_another_users_notification_read(self):
+        notification = Notification.objects.create(
+            recipient=self.reporter,
+            actor=self.moderator,
+            post=self.post,
+            type=Notification.Type.POST_REMOVED,
+            title="Post removed",
+            message="Another user's notification.",
+        )
+        self._login("author", "author-pass-123")
+
+        response = self.client.post(f"/api/notifications/{notification.id}/read")
+
+        self.assertEqual(response.status_code, 404)
+        notification.refresh_from_db()
+        self.assertFalse(notification.is_read)

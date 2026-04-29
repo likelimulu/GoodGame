@@ -136,3 +136,18 @@ export interface DeveloperFeedback {
   message: string;
   created_at: string;
 }
+
+export type NotificationType = "moderation_warning" | "post_removed";
+
+export interface Notification {
+  id: number;
+  type: NotificationType;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  actor_username: string | null;
+  post_id: number | null;
+  post_title: string | null;
+  post_status: PostStatus | null;
+}
