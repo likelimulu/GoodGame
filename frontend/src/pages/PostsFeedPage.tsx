@@ -416,6 +416,9 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                     </div>
 
                     <div className="post-badges">
+                      {mineOnly && post.status === "draft" && (
+                        <span className="pill pill-draft">Draft</span>
+                      )}
                       {post.is_priority && <span className="pill pill-priority">Priority</span>}
                       {post.is_question && <span className="pill pill-question">Question</span>}
                       {post.has_spoilers && <span className="pill pill-warning">Spoilers</span>}

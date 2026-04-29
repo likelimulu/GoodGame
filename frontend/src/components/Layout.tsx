@@ -47,7 +47,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [menuOpen]);
 
   useEffect(() => {
-    setMenuOpen(false);
+    const frame = window.requestAnimationFrame(() => setMenuOpen(false));
+    return () => window.cancelAnimationFrame(frame);
   }, [pathname]);
 
   const [resending, setResending] = useState(false);
@@ -118,6 +119,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isAdminQueue = pathname === "/admin/moderator-requests";
   const isModeratorWorkspace = pathname === "/moderator";
   const isDevPortal = pathname === "/developer";
+  const isSearch = pathname === "/search";
   const isPostStudio =
     pathname === "/posts/create" ||
     (pathname.startsWith("/posts/") && pathname !== "/posts");
@@ -175,6 +177,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             onClick={() => setMenuOpen(false)}
           >
             Patch Feed
+          </Link>
+          <Link className={isSearch ? "active" : ""} to="/search" onClick={() => setMenuOpen(false)}>
+            Search
           </Link>
           {user && (
             <Link

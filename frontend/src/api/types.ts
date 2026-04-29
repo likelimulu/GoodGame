@@ -49,6 +49,20 @@ export interface Post {
   comment_count: number;
 }
 
+export interface SearchUser {
+  id: number;
+  username: string;
+  reputation_score: number;
+  is_trusted: boolean;
+}
+
+export interface SearchResponse {
+  posts: Post[];
+  game_hubs: GameHub[];
+  tags: Tag[];
+  users: SearchUser[];
+}
+
 export interface PostComment {
   id: number;
   author: PostAuthor;
