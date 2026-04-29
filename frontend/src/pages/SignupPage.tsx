@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-/* eslint-disable react/jsx-no-target-blank */
 import type { ApiError, ModeratorAccessRequest } from "../api/types";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/useAuth";

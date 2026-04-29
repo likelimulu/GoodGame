@@ -199,6 +199,80 @@
     flex-shrink: 0;
   }
 
+  .nav-avatar-tooltip {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 10px);
+    display: grid;
+    gap: 4px;
+    min-width: 150px;
+    max-width: 240px;
+    padding: 10px 14px;
+    border: 3px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: linear-gradient(
+      180deg,
+      rgba(43, 54, 65, 0.99),
+      rgba(27, 35, 42, 0.99)
+    );
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition:
+      opacity 140ms ease,
+      transform 140ms ease,
+      visibility 140ms ease;
+    visibility: hidden;
+    z-index: 210;
+  }
+
+  .nav-avatar-wrapper:hover .nav-avatar-tooltip,
+  .nav-avatar-wrapper:focus-within .nav-avatar-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  .nav-avatar-wrapper.nav-avatar-wrapper--open .nav-avatar-tooltip,
+  .nav-avatar-wrapper.nav-avatar-wrapper--open:hover .nav-avatar-tooltip,
+  .nav-avatar-wrapper.nav-avatar-wrapper--open:focus-within .nav-avatar-tooltip {
+    opacity: 0;
+    transform: translateY(4px);
+    visibility: hidden;
+  }
+
+  .nav .nav-avatar-tooltip-name,
+  .nav .nav-avatar-tooltip-role,
+  .nav .nav-dropdown-username,
+  .nav .nav-dropdown-role {
+    width: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    text-align: left;
+  }
+
+  .nav-avatar-tooltip-name {
+    overflow: hidden;
+    color: #fff8e6;
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.05;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-avatar-tooltip-role {
+    color: rgba(255, 208, 74, 0.92);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
   .nav-dropdown {
     position: absolute;
     top: calc(100% + 10px);
@@ -213,7 +287,35 @@
     );
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
     overflow: hidden;
-    z-index: 200;
+    z-index: 220;
+  }
+
+  .nav-dropdown-user {
+    display: grid;
+    gap: 4px;
+    padding: 12px 18px;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .nav-dropdown-username {
+    max-width: 180px;
+    overflow: hidden;
+    color: #fff8e6;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.05;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-dropdown-role {
+    color: rgba(255, 208, 74, 0.92);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-transform: uppercase;
   }
 
   .nav-dropdown-item {
@@ -298,6 +400,10 @@
     display: contents;
   }
 
+  .topbar--overflow .nav-avatar-tooltip {
+    display: none;
+  }
+
   .topbar--overflow .nav-avatar {
     display: flex;
     justify-content: flex-end;
@@ -330,6 +436,24 @@
     border-radius: 0;
     background: transparent;
     box-shadow: none;
+  }
+
+  .topbar--overflow .nav-dropdown-user {
+    text-align: right;
+  }
+
+  .topbar--overflow .nav .nav-dropdown-username,
+  .topbar--overflow .nav .nav-dropdown-role {
+    width: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    text-align: right;
+  }
+
+  .topbar--overflow .nav-dropdown-username {
+    margin-left: auto;
   }
 
   .topbar--overflow .nav-dropdown-item {
@@ -2116,6 +2240,10 @@
       display: contents;
     }
 
+    .nav-avatar-tooltip {
+      display: none;
+    }
+
     .nav-avatar {
       display: flex;
       justify-content: flex-end;
@@ -2148,6 +2276,24 @@
       border-radius: 0;
       background: transparent;
       box-shadow: none;
+    }
+
+    .nav-dropdown-user {
+      text-align: right;
+    }
+
+    .nav .nav-dropdown-username,
+    .nav .nav-dropdown-role {
+      width: auto;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      text-align: right;
+    }
+
+    .nav-dropdown-username {
+      margin-left: auto;
     }
 
     .nav-dropdown-item {

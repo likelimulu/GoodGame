@@ -47,7 +47,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [menuOpen]);
 
   useEffect(() => {
-    setMenuOpen(false);
+    const frame = window.requestAnimationFrame(() => setMenuOpen(false));
+    return () => window.cancelAnimationFrame(frame);
   }, [pathname]);
 
   const [resending, setResending] = useState(false);
@@ -220,10 +221,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </Link>
           )}
           {user ? (
-            <div className="nav-avatar-wrapper" ref={dropdownRef}>
+            <div
+              className={`nav-avatar-wrapper${dropdownOpen ? " nav-avatar-wrapper--open" : ""}`}
+              ref={dropdownRef}
+            >
               <button
                 className="nav-avatar"
-                aria-label="Account"
+                aria-label={`Account: ${user.username}`}
                 aria-expanded={dropdownOpen}
                 onClick={() => setDropdownOpen((o) => !o)}
               >
@@ -235,8 +239,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <path d="M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3C0 498.7 13.3 512 29.7 512l388.6 0c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304l-91.4 0z" />
                 </svg>
               </button>
+              <div className="nav-avatar-tooltip" role="tooltip">
+                <span className="nav-avatar-tooltip-name">{user.username}</span>
+                <span className="nav-avatar-tooltip-role">{user.role}</span>
+              </div>
               {dropdownOpen && (
                 <div className="nav-dropdown">
+                  <div className="nav-dropdown-user">
+                    <span className="nav-dropdown-username">{user.username}</span>
+                    <span className="nav-dropdown-role">{user.role}</span>
+                  </div>
                   <button
                     className="nav-dropdown-item"
                     onClick={() => {
