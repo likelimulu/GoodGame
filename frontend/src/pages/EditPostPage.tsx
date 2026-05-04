@@ -6,22 +6,26 @@ import Spinner from "../components/Spinner";
 import { api } from "../api/client";
 import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/useAuth";
 
 export default function EditPostPage() {
   const { postId } = useParams<{ postId: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const { user } = useAuth();
 
   const [post, setPost] = useState<Post | null>(null);
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const hubsEndpoint = user?.role === "developer" ? "/developer/gamehubs" : "/gamehubs";
+
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
 
-    api.get<GameHub[]>("/gamehubs", signal).then(({ status, data }) => {
+    api.get<GameHub[]>(hubsEndpoint, signal).then(({ status, data }) => {
       if (status === 200 && Array.isArray(data)) setGameHubs(data);
     });
 
@@ -36,7 +40,7 @@ export default function EditPostPage() {
     }
 
     return () => controller.abort();
-  }, [postId]);
+  }, [postId, hubsEndpoint]);
 
   async function handleSubmit(
     e: { preventDefault(): void; currentTarget: HTMLFormElement },

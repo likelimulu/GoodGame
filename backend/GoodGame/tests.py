@@ -800,6 +800,76 @@ class PostApiTests(TestCase):
         response = self.client.delete(f"/api/posts/{post_id}")
         self.assertEqual(response.status_code, 403)
 
+    # ── Developer hub authority ────────────────────────────────
+
+    def test_developer_can_post_in_assigned_hub(self):
+        dev = User.objects.create_user(
+            username="dev", password="dev-pass-123", email="dev@example.com"
+        )
+        dev.profile.role = UserProfile.Role.DEVELOPER
+        dev.profile.save()
+        self.hub.developers.add(dev)
+
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "dev", "password": "dev-pass-123"}),
+            content_type="application/json",
+        )
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Dev post", "body": "Hello"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_developer_cannot_post_in_unassigned_hub(self):
+        dev = User.objects.create_user(
+            username="dev", password="dev-pass-123", email="dev@example.com"
+        )
+        dev.profile.role = UserProfile.Role.DEVELOPER
+        dev.profile.save()
+        other_hub = GameHub.objects.create(name="Other Hub", slug="other-hub")
+
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "dev", "password": "dev-pass-123"}),
+            content_type="application/json",
+        )
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": other_hub.id, "title": "Sneaky post", "body": "x"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_developer_cannot_move_post_to_unassigned_hub(self):
+        dev = User.objects.create_user(
+            username="dev", password="dev-pass-123", email="dev@example.com"
+        )
+        dev.profile.role = UserProfile.Role.DEVELOPER
+        dev.profile.save()
+        self.hub.developers.add(dev)
+        other_hub = GameHub.objects.create(name="Other Hub", slug="other-hub")
+
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "dev", "password": "dev-pass-123"}),
+            content_type="application/json",
+        )
+        create_resp = self.client.post(
+            "/api/posts",
+            data=json.dumps({"game_hub_id": self.hub.id, "title": "Dev post", "body": "Hello"}),
+            content_type="application/json",
+        )
+        post_id = create_resp.json()["id"]
+
+        response = self.client.put(
+            f"/api/posts/{post_id}",
+            data=json.dumps({"game_hub_id": other_hub.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
 
 class PostVoteApiTests(TestCase):
     def setUp(self):
