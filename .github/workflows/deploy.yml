@@ -59,20 +59,6 @@ jobs:
             --resource-group goodgame-rg \
             --image ${{ secrets.ACR_LOGIN_SERVER }}/goodgame-api:${{ github.sha }}
 
-      - name: Run migrations
-        run: |
-          az containerapp exec \
-            --name goodgame-api \
-            --resource-group goodgame-rg \
-            --command "python manage.py migrate --no-input"
-
-      - name: Seed test users
-        run: |
-          az containerapp exec \
-            --name goodgame-api \
-            --resource-group goodgame-rg \
-            --command "python manage.py seed_test_users"
-
   # ── Deploy frontend to Azure Static Web Apps ──────────────────────────────────
   deploy-frontend:
     runs-on: ubuntu-latest
