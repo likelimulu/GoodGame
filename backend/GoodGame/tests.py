@@ -342,6 +342,32 @@ class GameHubApiTests(TestCase):
         self.assertIn("Minecraft Hub", names)
 
 
+class DeveloperHubConstraintTests(TestCase):
+    def setUp(self):
+        self.dev = User.objects.create_user(
+            username="devuser", password="pass-123", email="dev@example.com"
+        )
+        self.dev.profile.role = UserProfile.Role.DEVELOPER
+        self.dev.profile.save()
+        self.hub1 = GameHub.objects.create(name="Hub One", slug="hub-one")
+        self.hub2 = GameHub.objects.create(name="Hub Two", slug="hub-two")
+
+    def test_developer_can_be_assigned_to_one_hub(self):
+        self.hub1.developers.add(self.dev)
+        self.assertIn(self.dev, self.hub1.developers.all())
+
+    def test_developer_cannot_be_assigned_to_second_hub(self):
+        self.hub1.developers.add(self.dev)
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self.hub2.developers.add(self.dev)
+
+    def test_re_adding_to_same_hub_is_allowed(self):
+        self.hub1.developers.add(self.dev)
+        # Should not raise
+        self.hub1.developers.add(self.dev)
+
+
 class SearchApiTests(TestCase):
     def setUp(self):
         self.author = User.objects.create_user(
