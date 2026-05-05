@@ -1,5 +1,8 @@
+import logging
 import os
 import secrets
+
+logger = logging.getLogger("GoodGame")
 from datetime import datetime as datetime_class, timedelta
 from typing import List, Optional
 
@@ -103,11 +106,13 @@ def _send_verification_email(user):
 @router.post("/signup", response={201: SignupOut, 400: ErrorOut, 409: ErrorOut})
 def signup(request, data: SignupIn):
     if User.objects.filter(username=data.username).exists():
+        logger.warning("Signup attempted with existing username '%s'", data.username)
         return 409, {"error": "Username already taken"}
 
     try:
         validate_password(data.password)
     except ValidationError as e:
+        logger.warning("Signup password validation failed for username '%s'", data.username)
         return 400, {"error": "; ".join(e.messages)}
 
     user = User.objects.create_user(
@@ -115,6 +120,7 @@ def signup(request, data: SignupIn):
         password=data.password,
         email=data.email,
     )
+    logger.info("New user registered: '%s'", user.username)
     _send_verification_email(user)
     return 201, user
 
@@ -123,9 +129,11 @@ def signup(request, data: SignupIn):
 def login(request, data: LoginIn):
     user = authenticate(request, username=data.username, password=data.password)
     if user is None:
+        logger.warning("Failed login attempt for username '%s' from %s", data.username, request.META.get("REMOTE_ADDR"))
         return 401, {"error": "Invalid username or password"}
 
     auth_login(request, user)
+    logger.info("User '%s' logged in from %s", user.username, request.META.get("REMOTE_ADDR"))
     if data.remember_me:
         request.session.set_expiry(settings.PERSISTENT_LOGIN_AGE_SECONDS)
     else:
@@ -135,7 +143,9 @@ def login(request, data: LoginIn):
 
 @router.post("/auth/logout", response=MessageOut)
 def logout(request):
+    username = request.user.username if request.user.is_authenticated else "anonymous"
     auth_logout(request)
+    logger.info("User '%s' logged out", username)
     return {"message": "Logged out"}
 
 
@@ -305,11 +315,15 @@ _MAX_AVATAR_SIZE = 2 * 1024 * 1024       # 2 MB
 
 def _validate_upload(file: UploadedFile, max_size: int, allowed_extensions: set = None):
     if file.size > max_size:
-        return f"File size exceeds {max_size // (1024 * 1024)} MB limit"
+        msg = f"File size exceeds {max_size // (1024 * 1024)} MB limit"
+        logger.warning("Upload rejected — %s (filename: '%s', size: %d)", msg, file.name, file.size)
+        return msg
     if allowed_extensions is not None:
         ext = os.path.splitext(file.name)[1].lower()
         if ext not in allowed_extensions:
-            return f"File type '{ext}' is not allowed"
+            msg = f"File type '{ext}' is not allowed"
+            logger.warning("Upload rejected — %s (filename: '%s')", msg, file.name)
+            return msg
     return None
 
 
@@ -969,6 +983,10 @@ def moderate_post(request, post_id: int, data: PostModerationActionIn):
             moderator=request.user,
             action=data.action,
             note=note,
+        )
+        logger.info(
+            "Moderator '%s' applied action '%s' to post %d (author: '%s')",
+            request.user.username, data.action, post.id, post.author.username,
         )
 
         now = timezone.now()
