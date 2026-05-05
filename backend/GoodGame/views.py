@@ -1,3 +1,4 @@
+import os
 import secrets
 from datetime import datetime as datetime_class, timedelta
 from typing import List, Optional
@@ -6,13 +7,16 @@ from ninja import File, Form, Router
 from ninja.files import UploadedFile
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Case, CharField, Count, DateTimeField, FloatField, IntegerField, OuterRef, Q, Subquery, Sum, TextField, Value, When
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.text import get_valid_filename
 
 from .models import (
     HIGH_REPUTATION_THRESHOLD,
@@ -96,10 +100,15 @@ def _send_verification_email(user):
     )
 
 
-@router.post("/signup", response={201: SignupOut, 409: dict})
+@router.post("/signup", response={201: SignupOut, 400: ErrorOut, 409: ErrorOut})
 def signup(request, data: SignupIn):
     if User.objects.filter(username=data.username).exists():
         return 409, {"error": "Username already taken"}
+
+    try:
+        validate_password(data.password)
+    except ValidationError as e:
+        return 400, {"error": "; ".join(e.messages)}
 
     user = User.objects.create_user(
         username=data.username,
@@ -289,14 +298,34 @@ def review_moderator_request(request, request_id: int, data: ModeratorRequestRev
     return 200, moderator_request
 
 
-@router.put("/users/me/avatar", response={200: AvatarOut, 401: ErrorOut})
+_ALLOWED_ATTACHMENT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif"}
+_MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024   # 5 MB
+_MAX_AVATAR_SIZE = 2 * 1024 * 1024       # 2 MB
+
+
+def _validate_upload(file: UploadedFile, max_size: int, allowed_extensions: set = None):
+    if file.size > max_size:
+        return f"File size exceeds {max_size // (1024 * 1024)} MB limit"
+    if allowed_extensions is not None:
+        ext = os.path.splitext(file.name)[1].lower()
+        if ext not in allowed_extensions:
+            return f"File type '{ext}' is not allowed"
+    return None
+
+
+@router.put("/users/me/avatar", response={200: AvatarOut, 400: ErrorOut, 401: ErrorOut})
 def update_avatar(request, file: UploadedFile = File(...)):
     """Upload a new profile picture. Saves to Azure Blob Storage (or local media in dev)."""
     if not request.user.is_authenticated:
         return 401, {"error": "Authentication required"}
 
+    error = _validate_upload(file, _MAX_AVATAR_SIZE)
+    if error:
+        return 400, {"error": error}
+
     profile = request.user.profile
-    profile.profile_picture.save(file.name, file, save=True)
+    safe_name = get_valid_filename(file.name)
+    profile.profile_picture.save(safe_name, file, save=True)
     return 200, {"url": profile.profile_picture.url}
 
 
@@ -664,7 +693,7 @@ def list_posts(
             return 401, {"error": "Authentication required"}
         qs = qs.filter(author=request.user).exclude(status=Post.Status.DELETED).order_by("-updated_at")
     else:
-        qs = qs.filter(status=status)
+        qs = qs.filter(status=Post.Status.PUBLISHED)
 
         trusted = _is_trusted_user(request.user)
 
@@ -828,7 +857,12 @@ def create_post_comment(
         body=cleaned_body,
     )
     if attachment:
-        comment.attachment.save(attachment.name, attachment, save=True)
+        error = _validate_upload(attachment, _MAX_ATTACHMENT_SIZE, _ALLOWED_ATTACHMENT_EXTENSIONS)
+        if error:
+            comment.delete()
+            return 400, {"error": error}
+        safe_name = get_valid_filename(attachment.name)
+        comment.attachment.save(safe_name, attachment, save=True)
 
     _attach_comment_file_fields([comment], request)
     return 201, comment
