@@ -544,13 +544,16 @@ def _notifications_for_user(user):
     return Notification.objects.filter(recipient=user).select_related("actor", "post")
 
 
-@router.post("/posts", response={201: PostOut, 401: ErrorOut, 404: ErrorOut})
+@router.post("/posts", response={201: PostOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
 def create_post(request, data: PostIn):
     """Create a new post in a game hub."""
     if not request.user.is_authenticated:
         return 401, {"error": "Authentication required"}
 
     game_hub = get_object_or_404(GameHub, id=data.game_hub_id)
+
+    if _is_developer(request.user) and not request.user.developed_hubs.filter(id=game_hub.id).exists():
+        return 403, {"error": "Developers can only post in their assigned hubs"}
 
     post = Post.objects.create(
         game_hub=game_hub,
@@ -606,7 +609,10 @@ def update_post(request, post_id: int, data: PostUpdateIn):
         return 403, {"error": "You can only edit your own posts"}
 
     if data.game_hub_id is not None:
-        post.game_hub = get_object_or_404(GameHub, id=data.game_hub_id)
+        new_hub = get_object_or_404(GameHub, id=data.game_hub_id)
+        if _is_developer(request.user) and not request.user.developed_hubs.filter(id=new_hub.id).exists():
+            return 403, {"error": "Developers can only post in their assigned hubs"}
+        post.game_hub = new_hub
     if data.title is not None:
         post.title = data.title
     if data.body is not None:
