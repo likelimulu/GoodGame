@@ -8,6 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from .models import (
+    HIGH_REPUTATION_THRESHOLD,
     GameHub,
     ModeratorAccessRequest,
     Notification,
@@ -1593,3 +1594,225 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(response.status_code, 404)
         notification.refresh_from_db()
         self.assertFalse(notification.is_read)
+
+
+# ── GG-15  Developer pinning tests ────────────────────────────────
+
+
+class DeveloperPinPostTests(TestCase):
+    def setUp(self):
+        self.hub = GameHub.objects.create(name="Test Game", slug="test-game")
+        self.dev_user = User.objects.create_user(
+            username="devuser", password="dev-pass-123", email="dev@example.com"
+        )
+        self.dev_user.profile.role = UserProfile.Role.DEVELOPER
+        self.dev_user.profile.save()
+        self.hub.developers.add(self.dev_user)
+
+        self.normal_user = User.objects.create_user(
+            username="normal", password="normal-pass-123", email="normal@example.com"
+        )
+
+    def _login(self, username, password):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    def test_developer_post_auto_pinned(self):
+        self._login("devuser", "dev-pass-123")
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({
+                "game_hub_id": self.hub.id,
+                "title": "Dev Announcement",
+                "body": "New patch notes",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["is_pinned"])
+
+    def test_normal_user_post_not_pinned(self):
+        self._login("normal", "normal-pass-123")
+        response = self.client.post(
+            "/api/posts",
+            data=json.dumps({
+                "game_hub_id": self.hub.id,
+                "title": "Player Post",
+                "body": "Just a discussion",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.json()["is_pinned"])
+
+    def test_toggle_pin_requires_developer(self):
+        self._login("normal", "normal-pass-123")
+        post = Post.objects.create(
+            game_hub=self.hub, author=self.normal_user, title="T", body="B"
+        )
+        response = self.client.put(f"/api/posts/{post.id}/pin")
+        self.assertEqual(response.status_code, 403)
+
+    def test_developer_can_toggle_pin(self):
+        self._login("devuser", "dev-pass-123")
+        post = Post.objects.create(
+            game_hub=self.hub, author=self.normal_user, title="T", body="B"
+        )
+        response = self.client.put(f"/api/posts/{post.id}/pin")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["is_pinned"])
+
+        response = self.client.put(f"/api/posts/{post.id}/pin")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["is_pinned"])
+
+    def test_pinned_posts_appear_first(self):
+        self._login("devuser", "dev-pass-123")
+        p1 = Post.objects.create(
+            game_hub=self.hub, author=self.normal_user, title="Old", body="B"
+        )
+        p2 = Post.objects.create(
+            game_hub=self.hub, author=self.dev_user, title="Pinned", body="B", is_pinned=True
+        )
+        response = self.client.get(f"/api/posts?game_hub_id={self.hub.id}")
+        self.assertEqual(response.status_code, 200)
+        ids = [p["id"] for p in response.json()]
+        self.assertEqual(ids[0], p2.id)
+
+
+# ── GG-20  Weighted score tests ───────────────────────────────────
+
+
+class WeightedScoreTests(TestCase):
+    def setUp(self):
+        self.hub = GameHub.objects.create(name="WS Hub", slug="ws-hub")
+        self.trusted_user = User.objects.create_user(
+            username="trusted", password="pass-123", email="trusted@example.com"
+        )
+        self.trusted_user.profile.reputation_score = HIGH_REPUTATION_THRESHOLD
+        self.trusted_user.profile.save()
+
+        self.regular_user = User.objects.create_user(
+            username="regular", password="pass-123", email="regular@example.com"
+        )
+
+    def _login(self, username):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": "pass-123"}),
+            content_type="application/json",
+        )
+
+    def test_post_has_weighted_score_field(self):
+        post = Post.objects.create(
+            game_hub=self.hub, author=self.regular_user, title="T", body="B"
+        )
+        response = self.client.get(f"/api/posts/{post.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("weighted_score", response.json())
+
+    def test_trusted_author_gets_bonus(self):
+        post_trusted = Post.objects.create(
+            game_hub=self.hub, author=self.trusted_user, title="Trusted Post", body="B"
+        )
+        post_regular = Post.objects.create(
+            game_hub=self.hub, author=self.regular_user, title="Regular Post", body="B"
+        )
+        r1 = self.client.get(f"/api/posts/{post_trusted.id}")
+        r2 = self.client.get(f"/api/posts/{post_regular.id}")
+        self.assertGreater(r1.json()["weighted_score"], r2.json()["weighted_score"])
+
+    def test_trusted_user_vote_weighs_more(self):
+        p1 = Post.objects.create(
+            game_hub=self.hub, author=self.regular_user, title="P1", body="B"
+        )
+        p2 = Post.objects.create(
+            game_hub=self.hub, author=self.regular_user, title="P2", body="B"
+        )
+        PostVote.objects.create(post=p1, user=self.trusted_user, value=1)
+        PostVote.objects.create(post=p2, user=self.regular_user, value=1)
+
+        r1 = self.client.get(f"/api/posts/{p1.id}")
+        r2 = self.client.get(f"/api/posts/{p2.id}")
+        self.assertGreater(r1.json()["weighted_score"], r2.json()["weighted_score"])
+
+
+# ── GG-24  Advanced filtering tests ──────────────────────────────
+
+
+class AdvancedFilteringTests(TestCase):
+    def setUp(self):
+        self.hub = GameHub.objects.create(name="Filter Hub", slug="filter-hub")
+        self.trusted_user = User.objects.create_user(
+            username="trusted_filter", password="pass-123", email="tf@example.com"
+        )
+        self.trusted_user.profile.reputation_score = HIGH_REPUTATION_THRESHOLD
+        self.trusted_user.profile.save()
+
+        self.regular_user = User.objects.create_user(
+            username="regular_filter", password="pass-123", email="rf@example.com"
+        )
+
+        self.tag = Tag.objects.create(name="Strategy")
+        self.post1 = Post.objects.create(
+            game_hub=self.hub, author=self.trusted_user, title="Strategy Guide", body="B"
+        )
+        self.post1.tags.add(self.tag)
+        self.post2 = Post.objects.create(
+            game_hub=self.hub, author=self.regular_user, title="Random Post", body="B"
+        )
+
+    def _login(self, username):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": "pass-123"}),
+            content_type="application/json",
+        )
+
+    def test_trusted_user_can_filter_by_tag(self):
+        self._login("trusted_filter")
+        response = self.client.get("/api/posts?tag=Strategy")
+        self.assertEqual(response.status_code, 200)
+        titles = [p["title"] for p in response.json()]
+        self.assertIn("Strategy Guide", titles)
+        self.assertNotIn("Random Post", titles)
+
+    def test_regular_user_tag_filter_ignored(self):
+        self._login("regular_filter")
+        response = self.client.get("/api/posts?tag=Strategy")
+        self.assertEqual(response.status_code, 200)
+        titles = [p["title"] for p in response.json()]
+        self.assertIn("Random Post", titles)
+
+    def test_trusted_user_can_filter_by_author(self):
+        self._login("trusted_filter")
+        response = self.client.get("/api/posts?author=regular_filter")
+        self.assertEqual(response.status_code, 200)
+        titles = [p["title"] for p in response.json()]
+        self.assertIn("Random Post", titles)
+        self.assertNotIn("Strategy Guide", titles)
+
+    def test_trusted_user_sort_newest(self):
+        self._login("trusted_filter")
+        response = self.client.get("/api/posts?sort_by=newest")
+        self.assertEqual(response.status_code, 200)
+        posts = response.json()
+        self.assertGreaterEqual(len(posts), 2)
+        self.assertGreaterEqual(posts[0]["created_at"], posts[1]["created_at"])
+
+    def test_tags_endpoint(self):
+        response = self.client.get("/api/tags")
+        self.assertEqual(response.status_code, 200)
+        names = [t["name"] for t in response.json()]
+        self.assertIn("Strategy", names)
+
+    def test_auth_me_returns_is_trusted(self):
+        self._login("trusted_filter")
+        response = self.client.get("/api/auth/me")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["is_trusted"])
+        self.assertGreaterEqual(data["reputation_score"], HIGH_REPUTATION_THRESHOLD)

@@ -14,6 +14,8 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [requestModerator, setRequestModerator] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   async function handleSubmit(e: { preventDefault(): void; currentTarget: HTMLFormElement }) {
     e.preventDefault();
@@ -122,24 +124,44 @@ export default function SignupPage() {
 
             <div className="field">
               <label htmlFor="signup-password">Password</label>
-              <input
-                id="signup-password"
-                name="password"
-                type="password"
-                placeholder="Create strong password"
-                required
-              />
+              <div className="password-wrapper">
+                <input
+                  id="signup-password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Create strong password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? "🙈" : "👁"}
+                </button>
+              </div>
             </div>
 
             <div className="field">
               <label htmlFor="signup-password-confirm">Confirm Password</label>
-              <input
-                id="signup-password-confirm"
-                name="confirm_password"
-                type="password"
-                placeholder="Re-enter password"
-                required
-              />
+              <div className="password-wrapper">
+                <input
+                  id="signup-password-confirm"
+                  name="confirm_password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Re-enter password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                >
+                  {showConfirmPassword ? "🙈" : "👁"}
+                </button>
+              </div>
             </div>
 
             <p className="form-note">

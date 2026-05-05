@@ -9,12 +9,13 @@ from django.contrib.auth.models import User
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
-from django.db.models import CharField, Count, DateTimeField, IntegerField, OuterRef, Q, Subquery, Sum, TextField, Value
+from django.db.models import Case, CharField, Count, DateTimeField, FloatField, IntegerField, OuterRef, Q, Subquery, Sum, TextField, Value, When
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from .models import (
+    HIGH_REPUTATION_THRESHOLD,
     DeveloperFeedback,
     EmailVerificationToken,
     GameHub,
@@ -54,6 +55,7 @@ from .schemas import (
     SearchOut,
     SignupIn,
     SignupOut,
+    TagOut,
     ModerationQueueItemOut,
     UserRoleIn,
     UserRoleOut,
@@ -307,6 +309,12 @@ def list_gamehubs(request):
     return GameHub.objects.all()
 
 
+@router.get("/tags", response=List[TagOut])
+def list_tags(request):
+    """Return all existing tags (for the filter dropdown)."""
+    return Tag.objects.order_by("name")
+
+
 # ── Search endpoint ───────────────────────────────────────────
 
 
@@ -348,7 +356,7 @@ def search(request, q: str = ""):
             | Q(author__username__icontains=query)
         )
         .distinct()
-        .order_by("-vote_score", "-created_at")[:SEARCH_POST_LIMIT]
+        .order_by("-weighted_score", "-created_at")[:SEARCH_POST_LIMIT]
     )
 
     return {
@@ -379,6 +387,35 @@ def _annotate_post_stats(queryset):
     vote_totals = PostVote.objects.filter(post_id=OuterRef("pk")).order_by().values("post")
     comment_totals = (
         PostComment.objects.filter(post_id=OuterRef("pk")).order_by().values("post")
+    )
+
+    trusted_upvotes = (
+        PostVote.objects.filter(
+            post_id=OuterRef("pk"),
+            value=PostVote.Value.UPVOTE,
+            user__profile__reputation_score__gte=HIGH_REPUTATION_THRESHOLD,
+        )
+        .order_by()
+        .values("post")
+        .annotate(total=Count("id"))
+        .values("total")[:1]
+    )
+    trusted_downvotes = (
+        PostVote.objects.filter(
+            post_id=OuterRef("pk"),
+            value=PostVote.Value.DOWNVOTE,
+            user__profile__reputation_score__gte=HIGH_REPUTATION_THRESHOLD,
+        )
+        .order_by()
+        .values("post")
+        .annotate(total=Count("id"))
+        .values("total")[:1]
+    )
+
+    author_bonus = Case(
+        When(author__profile__reputation_score__gte=HIGH_REPUTATION_THRESHOLD, then=Value(3.0)),
+        default=Value(0.0),
+        output_field=FloatField(),
     )
 
     return queryset.annotate(
@@ -414,6 +451,18 @@ def _annotate_post_stats(queryset):
             ),
             Value(0),
         ),
+        _trusted_up=Coalesce(Subquery(trusted_upvotes, output_field=IntegerField()), Value(0)),
+        _trusted_down=Coalesce(Subquery(trusted_downvotes, output_field=IntegerField()), Value(0)),
+        weighted_score=Coalesce(
+            Subquery(
+                vote_totals.annotate(total=Sum("value")).values("total")[:1],
+                output_field=FloatField(),
+            ),
+            Value(0.0),
+            output_field=FloatField(),
+        ) + Coalesce(Subquery(trusted_upvotes, output_field=FloatField()), Value(0.0))
+          - Coalesce(Subquery(trusted_downvotes, output_field=FloatField()), Value(0.0))
+          + author_bonus,
     )
 
 
@@ -555,6 +604,8 @@ def create_post(request, data: PostIn):
     if _is_developer(request.user) and not request.user.developed_hubs.filter(id=game_hub.id).exists():
         return 403, {"error": "Developers can only post in their assigned hubs"}
 
+    auto_pin = _is_developer(request.user) and request.user.developed_hubs.filter(id=game_hub.id).exists()
+
     post = Post.objects.create(
         game_hub=game_hub,
         author=request.user,
@@ -562,6 +613,7 @@ def create_post(request, data: PostIn):
         body=data.body,
         is_question=data.is_question,
         has_spoilers=data.has_spoilers,
+        is_pinned=auto_pin,
         status=data.status if data.status in ("published", "draft") else "published",
     )
 
@@ -571,9 +623,40 @@ def create_post(request, data: PostIn):
     return 201, _get_post_with_stats(post.id, request.user)
 
 
+def _is_trusted_user(user) -> bool:
+    if not user.is_authenticated:
+        return False
+    try:
+        return user.profile.reputation_score >= HIGH_REPUTATION_THRESHOLD
+    except UserProfile.DoesNotExist:
+        return False
+
+
+ADVANCED_SORT_OPTIONS = {
+    "votes": ["-is_pinned", "-vote_score", "-created_at"],
+    "weighted": ["-is_pinned", "-weighted_score", "-created_at"],
+    "newest": ["-is_pinned", "-created_at"],
+    "oldest": ["-is_pinned", "created_at"],
+    "most_commented": ["-is_pinned", "-comment_count", "-created_at"],
+    "controversial": ["-is_pinned", "-downvote_count", "-upvote_count", "-created_at"],
+}
+
+
 @router.get("/posts", response={200: List[PostOut], 401: ErrorOut})
-def list_posts(request, game_hub_id: int = None, status: str = "published", mine: bool = False):
-    """List public posts or the authenticated user's own posts."""
+def list_posts(
+    request,
+    game_hub_id: int = None,
+    status: str = "published",
+    mine: bool = False,
+    sort_by: str = None,
+    tag: str = None,
+    author: str = None,
+    date_from: str = None,
+    date_to: str = None,
+):
+    """List public posts or the authenticated user's own posts.
+    Trusted users (high reputation) unlock advanced sort/filter parameters.
+    """
     qs = _annotate_post_stats(_posts_with_related_data())
 
     if mine:
@@ -581,11 +664,31 @@ def list_posts(request, game_hub_id: int = None, status: str = "published", mine
             return 401, {"error": "Authentication required"}
         qs = qs.filter(author=request.user).exclude(status=Post.Status.DELETED).order_by("-updated_at")
     else:
-        qs = qs.filter(status=status).order_by("-vote_score", "-created_at")
+        qs = qs.filter(status=status)
+
+        trusted = _is_trusted_user(request.user)
+
+        if trusted and sort_by and sort_by in ADVANCED_SORT_OPTIONS:
+            qs = qs.order_by(*ADVANCED_SORT_OPTIONS[sort_by])
+        else:
+            qs = qs.order_by("-is_pinned", "-weighted_score", "-created_at")
+
+        if trusted and tag:
+            qs = qs.filter(tags__name__iexact=tag)
+        if trusted and author:
+            qs = qs.filter(author__username__icontains=author)
+        if trusted and date_from:
+            parsed = _parse_iso_date(date_from)
+            if parsed:
+                qs = qs.filter(created_at__date__gte=parsed)
+        if trusted and date_to:
+            parsed = _parse_iso_date(date_to)
+            if parsed:
+                qs = qs.filter(created_at__date__lte=parsed)
 
     if game_hub_id:
         qs = qs.filter(game_hub_id=game_hub_id)
-    return 200, _attach_current_user_vote(qs, request.user)
+    return 200, _attach_current_user_vote(qs.distinct(), request.user)
 
 
 @router.get("/posts/{post_id}", response={200: PostOut, 404: ErrorOut})
@@ -647,6 +750,24 @@ def delete_post(request, post_id: int):
     post.status = Post.Status.DELETED
     post.save()
     return 200, {"message": "Post deleted"}
+
+
+@router.put("/posts/{post_id}/pin", response={200: PostOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
+def toggle_pin_post(request, post_id: int):
+    """Pin or unpin a post. Only the developer assigned to the post's hub can toggle."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    post = get_object_or_404(Post, id=post_id)
+
+    if not _is_developer(request.user):
+        return 403, {"error": "Only developers can pin posts"}
+    if not request.user.developed_hubs.filter(id=post.game_hub_id).exists():
+        return 403, {"error": "You can only pin posts in your assigned hubs"}
+
+    post.is_pinned = not post.is_pinned
+    post.save(update_fields=["is_pinned", "updated_at"])
+    return 200, _get_post_with_stats(post.id, request.user)
 
 
 @router.put(
