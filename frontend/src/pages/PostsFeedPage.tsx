@@ -253,11 +253,19 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
       <main className="page-grid feed-grid">
         <section className="hero-card">
           <span className="eyebrow">{mineOnly ? "Post Studio" : "Patch Feed"}</span>
-          <h1 className="headline">{mineOnly ? "My Posts" : "Community Feed"}</h1>
+          <h1 className="headline">
+            {mineOnly && !loading && posts.length === 0
+              ? "No posts yet"
+              : mineOnly
+                ? "My Posts"
+                : "Community Feed"}
+          </h1>
           <p className="subhead">
-            {mineOnly
-              ? "Review your drafts and published threads, then edit or remove them when you need to."
-              : "Browse published posts, push strong threads upward, and bury weak ones."}
+            {mineOnly && !loading && posts.length === 0
+              ? "You haven't posted yet — don't you have anything to say? Make your first post to make your voice heard."
+              : mineOnly
+                ? "Review your drafts and published threads, then edit or remove them when you need to."
+                : "Browse published posts, push strong threads upward, and bury weak ones."}
           </p>
 
           <div className="feed-sidebar-stack">
@@ -374,7 +382,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
               : "Published posts are ranked by player votes, and each thread can collect comments with optional attachments."}
           </p>
 
-          {error && <p className="form-error">{error}</p>}
+          {error && !mineOnly && <p className="form-error">{error}</p>}
 
           {loading ? (
             <div className="feed-empty-state">
@@ -382,12 +390,24 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
             </div>
           ) : posts.length === 0 ? (
             <div className="feed-empty-state">
-              <h3 className="empty-title">{mineOnly ? "No posts yet" : "No posts yet"}</h3>
-              <p className="helper">
-                {mineOnly
-                  ? "Create your first post and it will show up here for future edits or deletion."
-                  : "Start the first thread in this hub and give other players something to react to."}
-              </p>
+              {mineOnly ? (
+                <>
+                  <h3 className="empty-title">No posts yet</h3>
+                  <p className="helper">
+                    You haven't posted yet — don't you have anything to say? Make your first post to make your voice heard.
+                  </p>
+                  <Link className="btn primary" style={{ marginTop: "1rem" }} to="/posts/create">
+                    Write your first post
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <h3 className="empty-title">No posts yet</h3>
+                  <p className="helper">
+                    Start the first thread in this hub and give other players something to react to.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="feed-list">
