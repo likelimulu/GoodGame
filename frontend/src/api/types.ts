@@ -49,6 +49,20 @@ export interface Post {
   comment_count: number;
 }
 
+export interface SearchUser {
+  id: number;
+  username: string;
+  reputation_score: number;
+  is_trusted: boolean;
+}
+
+export interface SearchResponse {
+  posts: Post[];
+  game_hubs: GameHub[];
+  tags: Tag[];
+  users: SearchUser[];
+}
+
 export interface PostComment {
   id: number;
   author: PostAuthor;
@@ -113,4 +127,27 @@ export interface PostModerationReport {
   reason: string;
   status: string;
   created_at: string;
+}
+
+export interface DeveloperFeedback {
+  id: number;
+  game_hub: GameHub;
+  from_username: string;
+  message: string;
+  created_at: string;
+}
+
+export type NotificationType = "moderation_warning" | "post_removed";
+
+export interface Notification {
+  id: number;
+  type: NotificationType;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  actor_username: string | null;
+  post_id: number | null;
+  post_title: string | null;
+  post_status: PostStatus | null;
 }

@@ -1,8 +1,10 @@
 from django.contrib import admin
 
 from .models import (
+    DeveloperFeedback,
     GameHub,
     ModeratorAccessRequest,
+    Notification,
     Post,
     PostModerationAction,
     PostModerationReport,
@@ -26,8 +28,13 @@ class ModeratorAccessRequestAdmin(admin.ModelAdmin):
 
 @admin.register(GameHub)
 class GameHubAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug", "created_at")
+    list_display = ("name", "slug", "developer_count", "created_at")
     prepopulated_fields = {"slug": ("name",)}
+    filter_horizontal = ("developers",)
+
+    def developer_count(self, obj):
+        return obj.developers.count()
+    developer_count.short_description = "Developers"
 
 
 @admin.register(Tag)
@@ -61,3 +68,18 @@ class PostModerationActionAdmin(admin.ModelAdmin):
     list_display = ("post", "moderator", "action", "created_at")
     list_filter = ("action",)
     search_fields = ("post__title", "moderator__username", "note")
+
+
+@admin.register(DeveloperFeedback)
+class DeveloperFeedbackAdmin(admin.ModelAdmin):
+    list_display = ("game_hub", "from_user", "created_at")
+    list_filter = ("game_hub",)
+    search_fields = ("game_hub__name", "from_user__username", "message")
+    readonly_fields = ("created_at",)
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("title", "recipient", "type", "is_read", "created_at")
+    list_filter = ("type", "is_read")
+    search_fields = ("title", "message", "recipient__username", "post__title")

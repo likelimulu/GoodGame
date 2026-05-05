@@ -1,5 +1,5 @@
 import secrets
-from datetime import timedelta
+from datetime import datetime as datetime_class, timedelta
 from typing import List, Optional
 
 from ninja import File, Form, Router
@@ -8,15 +8,18 @@ from django.contrib.auth import authenticate, login as auth_login, logout as aut
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.core.mail import send_mail
+from django.db import transaction
 from django.db.models import CharField, Count, DateTimeField, IntegerField, OuterRef, Q, Subquery, Sum, TextField, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from .models import (
+    DeveloperFeedback,
     EmailVerificationToken,
     GameHub,
     ModeratorAccessRequest,
+    Notification,
     Post,
     PostComment,
     PostModerationAction,
@@ -28,6 +31,8 @@ from .models import (
 from .schemas import (
     AuthUserOut,
     AvatarOut,
+    DeveloperFeedbackIn,
+    DeveloperFeedbackOut,
     EmailVerifyIn,
     ErrorOut,
     GameHubOut,
@@ -36,6 +41,7 @@ from .schemas import (
     ModeratorRequestCreateIn,
     ModeratorRequestOut,
     ModeratorRequestReviewIn,
+    NotificationOut,
     PostIn,
     PostCommentOut,
     PostModerationActionIn,
@@ -45,6 +51,7 @@ from .schemas import (
     PostVoteIn,
     PostVoteSummaryOut,
     PostUpdateIn,
+    SearchOut,
     SignupIn,
     SignupOut,
     ModerationQueueItemOut,
@@ -53,6 +60,10 @@ from .schemas import (
 )
 
 router = Router()
+
+SEARCH_MIN_QUERY_LENGTH = 2
+SEARCH_POST_LIMIT = 20
+SEARCH_GROUP_LIMIT = 8
 
 
 # ── Auth endpoints ────────────────────────────────────────────
@@ -156,6 +167,36 @@ def resend_verification(request):
 
     _send_verification_email(request.user)
     return 200, {"message": "Verification email sent"}
+
+
+# ── Notification endpoints ────────────────────────────────────
+
+
+@router.get("/notifications", response={200: List[NotificationOut], 401: ErrorOut})
+def list_notifications(request):
+    """List in-app notifications for the current authenticated user."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    return 200, _notifications_for_user(request.user)
+
+
+@router.post(
+    "/notifications/{notification_id}/read",
+    response={200: NotificationOut, 401: ErrorOut, 404: ErrorOut},
+)
+def mark_notification_read(request, notification_id: int):
+    """Mark one of the current user's notifications as read."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    notification = _notifications_for_user(request.user).filter(id=notification_id).first()
+    if notification is None:
+        return 404, {"error": "Notification not found"}
+    if not notification.is_read:
+        notification.is_read = True
+        notification.save(update_fields=["is_read"])
+    return 200, notification
 
 
 # ── User profile endpoints ─────────────────────────────────────
@@ -266,6 +307,58 @@ def list_gamehubs(request):
     return GameHub.objects.all()
 
 
+# ── Search endpoint ───────────────────────────────────────────
+
+
+@router.get("/search", response=SearchOut)
+def search(request, q: str = ""):
+    """Search public content without including comments."""
+    query = q.strip()
+    empty_results = {
+        "posts": [],
+        "game_hubs": [],
+        "tags": [],
+        "users": [],
+    }
+    if len(query) < SEARCH_MIN_QUERY_LENGTH:
+        return empty_results
+
+    game_hubs = GameHub.objects.filter(
+        Q(name__icontains=query) | Q(slug__icontains=query)
+    ).order_by("name")[:SEARCH_GROUP_LIMIT]
+    tags = Tag.objects.filter(name__icontains=query).order_by("name")[:SEARCH_GROUP_LIMIT]
+    users = (
+        User.objects.filter(
+            username__icontains=query,
+            posts__status=Post.Status.PUBLISHED,
+        )
+        .select_related("profile")
+        .distinct()
+        .order_by("username")[:SEARCH_GROUP_LIMIT]
+    )
+    posts = (
+        _annotate_post_stats(_posts_with_related_data())
+        .filter(status=Post.Status.PUBLISHED)
+        .filter(
+            Q(title__icontains=query)
+            | Q(body__icontains=query)
+            | Q(game_hub__name__icontains=query)
+            | Q(game_hub__slug__icontains=query)
+            | Q(tags__name__icontains=query)
+            | Q(author__username__icontains=query)
+        )
+        .distinct()
+        .order_by("-vote_score", "-created_at")[:SEARCH_POST_LIMIT]
+    )
+
+    return {
+        "posts": _attach_current_user_vote(posts, request.user),
+        "game_hubs": list(game_hubs),
+        "tags": list(tags),
+        "users": list(users),
+    }
+
+
 # ── Post endpoints ────────────────────────────────────────────
 
 
@@ -371,11 +464,37 @@ def _has_moderation_access(user):
     }
 
 
-def _annotate_moderation_queue(queryset, report_status: Optional[str] = None):
-    reports = PostModerationReport.objects.filter(post_id=OuterRef("pk"))
-    if report_status is not None:
-        reports = reports.filter(status=report_status)
+def _create_moderation_notification(post, moderator, action_record, note: str):
+    if action_record.action == PostModerationAction.Action.WARN:
+        notification_type = Notification.Type.MODERATION_WARNING
+        title = "Moderator warning"
+        message = f'Your post "{post.title}" received a moderator warning.'
+    elif action_record.action == PostModerationAction.Action.REMOVE:
+        notification_type = Notification.Type.POST_REMOVED
+        title = "Post removed"
+        message = f'Your post "{post.title}" was removed from GoodGame.'
+    else:
+        return None
 
+    if note:
+        message = f"{message}\n\nModerator note: {note}"
+
+    notification, _ = Notification.objects.get_or_create(
+        moderation_action=action_record,
+        defaults={
+            "recipient": post.author,
+            "actor": moderator,
+            "post": post,
+            "type": notification_type,
+            "title": title,
+            "message": message,
+        },
+    )
+    return notification
+
+
+def _annotate_moderation_queue(queryset):
+    reports = PostModerationReport.objects.filter(post_id=OuterRef("pk"))
     actions = PostModerationAction.objects.filter(post_id=OuterRef("pk")).order_by("-created_at")
     latest_reports = reports.order_by("-created_at")
 
@@ -419,6 +538,10 @@ def _get_moderation_queue_item(post_id: int):
         _annotate_moderation_queue(_posts_with_related_data()),
         id=post_id,
     )
+
+
+def _notifications_for_user(user):
+    return Notification.objects.filter(recipient=user).select_related("actor", "post")
 
 
 @router.post("/posts", response={201: PostOut, 401: ErrorOut, 404: ErrorOut})
@@ -635,14 +758,15 @@ def list_moderation_queue(request, status: str = PostModerationReport.Status.OPE
         "all",
     }
     selected_status = status if status in allowed_statuses else PostModerationReport.Status.OPEN
-    report_status = None if selected_status == "all" else selected_status
 
     queue = (
-        _annotate_moderation_queue(_posts_with_related_data(), report_status)
+        _annotate_moderation_queue(_posts_with_related_data())
         .filter(report_count__gt=0)
         .exclude(status=Post.Status.DRAFT)
         .order_by("-latest_reported_at", "-report_count", "-updated_at")
     )
+    if selected_status != "all":
+        queue = queue.filter(report_status=selected_status)
     return 200, queue
 
 
@@ -657,52 +781,177 @@ def moderate_post(request, post_id: int, data: PostModerationActionIn):
     if not _has_moderation_access(request.user):
         return 403, {"error": "Moderator access required"}
 
-    post = get_object_or_404(Post, id=post_id)
-    if post.status == Post.Status.DRAFT:
-        return 404, {"error": "Post not found"}
-
-    active_reports = PostModerationReport.objects.filter(
-        post=post,
-        status__in=[PostModerationReport.Status.OPEN, PostModerationReport.Status.ESCALATED],
-    )
-    if not active_reports.exists():
-        return 409, {"error": "No active moderation reports for this post"}
-
-    if data.action == PostModerationAction.Action.REMOVE and post.status == Post.Status.DELETED:
-        return 409, {"error": "Post already removed"}
-
     note = data.note.strip()
-    PostModerationAction.objects.create(
-        post=post,
-        moderator=request.user,
-        action=data.action,
-        note=note,
-    )
 
-    now = timezone.now()
-    if data.action == PostModerationAction.Action.ESCALATE:
-        active_reports.update(
-            status=PostModerationReport.Status.ESCALATED,
-            reviewed_by=request.user,
-            reviewed_at=now,
-            updated_at=now,
+    with transaction.atomic():
+        post = get_object_or_404(Post.objects.select_for_update(), id=post_id)
+        if post.status == Post.Status.DRAFT:
+            return 404, {"error": "Post not found"}
+
+        active_reports = PostModerationReport.objects.select_for_update().filter(
+            post=post,
+            status__in=[PostModerationReport.Status.OPEN, PostModerationReport.Status.ESCALATED],
         )
-    elif data.action == PostModerationAction.Action.DISMISS:
-        active_reports.update(
-            status=PostModerationReport.Status.DISMISSED,
-            reviewed_by=request.user,
-            reviewed_at=now,
-            updated_at=now,
+        if not active_reports.exists():
+            return 409, {"error": "No active moderation reports for this post"}
+
+        if data.action == PostModerationAction.Action.REMOVE and post.status == Post.Status.DELETED:
+            return 409, {"error": "Post already removed"}
+
+        action_record = PostModerationAction.objects.create(
+            post=post,
+            moderator=request.user,
+            action=data.action,
+            note=note,
         )
-    else:
-        active_reports.update(
-            status=PostModerationReport.Status.ACTIONED,
-            reviewed_by=request.user,
-            reviewed_at=now,
-            updated_at=now,
-        )
-        if data.action == PostModerationAction.Action.REMOVE:
-            post.status = Post.Status.DELETED
-            post.save(update_fields=["status", "updated_at"])
+
+        now = timezone.now()
+        if data.action == PostModerationAction.Action.ESCALATE:
+            active_reports.update(
+                status=PostModerationReport.Status.ESCALATED,
+                reviewed_by=request.user,
+                reviewed_at=now,
+                updated_at=now,
+            )
+        elif data.action == PostModerationAction.Action.DISMISS:
+            active_reports.update(
+                status=PostModerationReport.Status.DISMISSED,
+                reviewed_by=request.user,
+                reviewed_at=now,
+                updated_at=now,
+            )
+        else:
+            active_reports.update(
+                status=PostModerationReport.Status.ACTIONED,
+                reviewed_by=request.user,
+                reviewed_at=now,
+                updated_at=now,
+            )
+            if data.action == PostModerationAction.Action.REMOVE:
+                post.status = Post.Status.DELETED
+                post.save(update_fields=["status", "updated_at"])
+            _create_moderation_notification(post, request.user, action_record, note)
 
     return 200, _get_moderation_queue_item(post.id)
+
+
+# ── Developer Feedback endpoints ──────────────────────────────
+
+
+FEEDBACK_COOLDOWN_SECONDS = 60
+
+
+def _is_developer(user) -> bool:
+    try:
+        return user.profile.role == UserProfile.Role.DEVELOPER
+    except UserProfile.DoesNotExist:
+        return False
+
+
+def _parse_iso_date(value: str):
+    try:
+        return datetime_class.strptime(value, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+@router.post(
+    "/gamehubs/{game_hub_id}/feedback",
+    response={
+        201: DeveloperFeedbackOut,
+        400: ErrorOut,
+        401: ErrorOut,
+        403: ErrorOut,
+        404: ErrorOut,
+        429: ErrorOut,
+    },
+)
+def submit_feedback(request, game_hub_id: int, data: DeveloperFeedbackIn):
+    """Submit feedback for developers of a game hub."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    game_hub = get_object_or_404(GameHub, id=game_hub_id)
+    message = data.message.strip()
+    if not message:
+        return 400, {"error": "Message is required"}
+    if len(message) > DeveloperFeedback.MAX_MESSAGE_LENGTH:
+        return 400, {
+            "error": f"Message cannot exceed {DeveloperFeedback.MAX_MESSAGE_LENGTH} characters"
+        }
+
+    if game_hub.developers.filter(id=request.user.id).exists():
+        return 403, {"error": "You cannot submit feedback to a hub you develop"}
+
+    cooldown_start = timezone.now() - timedelta(seconds=FEEDBACK_COOLDOWN_SECONDS)
+    if DeveloperFeedback.objects.filter(
+        from_user=request.user,
+        game_hub=game_hub,
+        created_at__gte=cooldown_start,
+    ).exists():
+        return 429, {"error": "Please wait a moment before submitting more feedback"}
+
+    feedback = DeveloperFeedback.objects.create(
+        game_hub=game_hub,
+        from_user=request.user,
+        message=message,
+    )
+    return 201, feedback
+
+
+@router.get(
+    "/developer/gamehubs",
+    response={200: List[GameHubOut], 401: ErrorOut, 403: ErrorOut},
+)
+def list_developer_gamehubs(request):
+    """List the game hubs the authenticated developer is assigned to."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if not _is_developer(request.user):
+        return 403, {"error": "Developer access required"}
+
+    return 200, request.user.developed_hubs.all().order_by("name")
+
+
+@router.get(
+    "/developer/feedback",
+    response={200: List[DeveloperFeedbackOut], 400: ErrorOut, 401: ErrorOut, 403: ErrorOut},
+)
+def list_developer_feedback(
+    request,
+    game_hub_id: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """List feedback for the authenticated developer's game hubs."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if not _is_developer(request.user):
+        return 403, {"error": "Developer access required"}
+
+    parsed_from = _parse_iso_date(date_from) if date_from else None
+    parsed_to = _parse_iso_date(date_to) if date_to else None
+    if date_from and parsed_from is None:
+        return 400, {"error": "Invalid date_from (expected YYYY-MM-DD)"}
+    if date_to and parsed_to is None:
+        return 400, {"error": "Invalid date_to (expected YYYY-MM-DD)"}
+    if parsed_from and parsed_to and parsed_from > parsed_to:
+        return 400, {"error": "date_from must be on or before date_to"}
+
+    developer_hub_ids = request.user.developed_hubs.values_list("id", flat=True)
+
+    qs = DeveloperFeedback.objects.filter(
+        game_hub_id__in=developer_hub_ids
+    ).select_related("game_hub", "from_user")
+
+    if game_hub_id is not None:
+        if game_hub_id not in set(developer_hub_ids):
+            return 200, []
+        qs = qs.filter(game_hub_id=game_hub_id)
+
+    if parsed_from:
+        qs = qs.filter(created_at__date__gte=parsed_from)
+    if parsed_to:
+        qs = qs.filter(created_at__date__lte=parsed_to)
+
+    return 200, qs

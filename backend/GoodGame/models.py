@@ -77,6 +77,11 @@ class GameHub(models.Model):
     """A dedicated discussion area for a specific game."""
     name = models.CharField(max_length=120, unique=True)
     slug = models.SlugField(max_length=120, unique=True)
+    developers = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="developed_hubs",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -210,6 +215,32 @@ class PostModerationReport(models.Model):
         return f"Report {self.id} on post {self.post_id} ({self.status})"
 
 
+class DeveloperFeedback(models.Model):
+    """Feedback submitted by a user targeting developers of a game hub."""
+    MAX_MESSAGE_LENGTH = 2000
+
+    game_hub = models.ForeignKey(GameHub, on_delete=models.CASCADE, related_name="feedback")
+    from_user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submitted_feedback",
+    )
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["game_hub", "-created_at"]),
+        ]
+
+    def __str__(self):
+        from_label = self.from_user.username if self.from_user else "[deleted]"
+        return f"Feedback from {from_label} on {self.game_hub.name}"
+
+
 class PostModerationAction(models.Model):
     class Action(models.TextChoices):
         WARN = "warn", "Warn"
@@ -239,3 +270,47 @@ class PostModerationAction(models.Model):
 
     def __str__(self):
         return f"{self.action} on post {self.post_id} by {self.moderator.username}"
+
+
+class Notification(models.Model):
+    class Type(models.TextChoices):
+        MODERATION_WARNING = "moderation_warning", "Moderation Warning"
+        POST_REMOVED = "post_removed", "Post Removed"
+
+    recipient = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="authored_notifications",
+    )
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+    moderation_action = models.OneToOneField(
+        PostModerationAction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification",
+    )
+    type = models.CharField(max_length=32, choices=Type.choices)
+    title = models.CharField(max_length=160)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.title} for {self.recipient.username}"

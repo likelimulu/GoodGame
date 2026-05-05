@@ -22,17 +22,22 @@ export default function TagEditor({
   hint = "Add up to 5 short tags for discoverability.",
 }: TagEditorProps) {
   const [tags, setTags] = useState<string[]>(initialTags);
+  const [draftTag, setDraftTag] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const normalizedDraftTag = normalizeTag(draftTag);
+  const submittedTags =
+    normalizedDraftTag && !tags.includes(normalizedDraftTag) && tags.length < MAX_TAGS
+      ? [...tags, normalizedDraftTag]
+      : tags;
 
   function addTag() {
-    if (!inputRef.current) return;
-    const tag = normalizeTag(inputRef.current.value);
+    const tag = normalizeTag(draftTag);
     if (!tag || tags.includes(tag) || tags.length >= MAX_TAGS) {
-      inputRef.current.value = "";
+      setDraftTag("");
       return;
     }
     setTags([...tags, tag]);
-    inputRef.current.value = "";
+    setDraftTag("");
   }
 
   function removeTag(tag: string) {
@@ -53,6 +58,8 @@ export default function TagEditor({
             type="text"
             placeholder={placeholder}
             maxLength={20}
+            value={draftTag}
+            onChange={(e) => setDraftTag(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -79,7 +86,7 @@ export default function TagEditor({
             </button>
           ))}
         </div>
-        <input type="hidden" name="tags" value={tags.join(",")} />
+        <input type="hidden" name="tags" value={submittedTags.join(",")} />
       </div>
     </div>
   );

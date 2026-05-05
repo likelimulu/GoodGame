@@ -167,6 +167,35 @@ class PostOut(Schema):
             return False
 
 
+class SearchUserOut(Schema):
+    id: int
+    username: str
+    reputation_score: int = 0
+    is_trusted: bool = False
+
+    @staticmethod
+    def resolve_reputation_score(obj):
+        try:
+            return obj.profile.reputation_score
+        except Exception:
+            return 0
+
+    @staticmethod
+    def resolve_is_trusted(obj):
+        from .models import HIGH_REPUTATION_THRESHOLD
+        try:
+            return obj.profile.reputation_score >= HIGH_REPUTATION_THRESHOLD
+        except Exception:
+            return False
+
+
+class SearchOut(Schema):
+    posts: List[PostOut]
+    game_hubs: List[GameHubOut]
+    tags: List[TagOut]
+    users: List[SearchUserOut]
+
+
 class PostVoteIn(Schema):
     value: Literal[-1, 0, 1]
 
@@ -221,6 +250,35 @@ class ModerationQueueItemOut(Schema):
     latest_action_at: Optional[datetime] = None
 
 
+class NotificationOut(Schema):
+    id: int
+    type: str
+    title: str
+    message: str
+    is_read: bool
+    created_at: datetime
+    actor_username: Optional[str] = None
+    post_id: Optional[int] = None
+    post_title: Optional[str] = None
+    post_status: Optional[str] = None
+
+    @staticmethod
+    def resolve_actor_username(obj):
+        return obj.actor.username if obj.actor else None
+
+    @staticmethod
+    def resolve_post_id(obj):
+        return obj.post_id
+
+    @staticmethod
+    def resolve_post_title(obj):
+        return obj.post.title if obj.post else None
+
+    @staticmethod
+    def resolve_post_status(obj):
+        return obj.post.status if obj.post else None
+
+
 # ── User profile schemas ───────────────────────────────────────────────────────
 
 
@@ -271,3 +329,22 @@ class ModeratorRequestOut(Schema):
     @staticmethod
     def resolve_reviewed_by_username(obj):
         return obj.reviewed_by.username if obj.reviewed_by else None
+
+
+# ── Developer Feedback schemas ─────────────────────────────────────────────────
+
+
+class DeveloperFeedbackIn(Schema):
+    message: str
+
+
+class DeveloperFeedbackOut(Schema):
+    id: int
+    game_hub: GameHubOut
+    from_username: str
+    message: str
+    created_at: datetime
+
+    @staticmethod
+    def resolve_from_username(obj):
+        return obj.from_user.username if obj.from_user else "[deleted]"
