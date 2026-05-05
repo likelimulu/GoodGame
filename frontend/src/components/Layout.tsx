@@ -1,16 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { api } from "../api/client";
-import type { ApiMessage, ApiError } from "../api/types";
+import type { ApiMessage, ApiError, Notification } from "../api/types";
+
+const NOTIFICATION_LABELS = {
+  moderation_warning: "Warning",
+  post_removed: "Post Removed",
+} as const;
+
+function formatNotificationDate(value: string) {
+  return new Date(value).toLocaleString();
+}
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [navOverflows, setNavOverflows] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const userActionsRef = useRef<HTMLDivElement>(null);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLElement>(null);
@@ -18,18 +33,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const switchBackThresholdRef = useRef(0);
 
   useEffect(() => {
-    if (!dropdownOpen) return;
+    if (!dropdownOpen && !notificationsOpen) return;
     function handleClickOutside(e: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
+      const target = e.target as Node;
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setDropdownOpen(false);
+      }
+      if (notificationsRef.current && !notificationsRef.current.contains(target)) {
+        setNotificationsOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [dropdownOpen]);
+  }, [dropdownOpen, notificationsOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -47,7 +63,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [menuOpen]);
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setMenuOpen(false));
+    const frame = window.requestAnimationFrame(() => {
+      setMenuOpen(false);
+      setDropdownOpen(false);
+      setNotificationsOpen(false);
+    });
     return () => window.cancelAnimationFrame(frame);
   }, [pathname]);
 
@@ -66,22 +86,72 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const showVerificationBanner =
     user && !user.email_verified && pathname !== "/verify-email";
+
+  useEffect(() => {
+    if (!user) {
+      const frame = window.requestAnimationFrame(() => {
+        setNotifications([]);
+        setNotificationsError(null);
+        setNotificationsLoading(false);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const frame = window.requestAnimationFrame(() => {
+      setNotificationsLoading(true);
+      setNotificationsError(null);
+    });
+
+    api
+      .get<Notification[] | ApiError>("/notifications", controller.signal)
+      .then(({ status, data }) => {
+        if (cancelled) return;
+        if (status === 200 && Array.isArray(data)) {
+          setNotifications(data);
+          return;
+        }
+        if (status === 401) {
+          setNotifications([]);
+          return;
+        }
+        setNotificationsError((data as ApiError).error ?? "Failed to load notifications");
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setNotificationsError("Failed to load notifications");
+      })
+      .finally(() => {
+        if (!cancelled) setNotificationsLoading(false);
+      });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      cancelled = true;
+      controller.abort();
+    };
+  }, [user, pathname]);
+
   useEffect(() => {
     const header = headerRef.current;
     const nav = navRef.current;
     if (!header || !nav) return;
 
     function check() {
+      const brand = header!.querySelector(".brand") as HTMLElement | null;
+      const userActionsWidth = userActionsRef.current?.offsetWidth ?? 0;
+      const brandWidth = brand?.offsetWidth ?? 0;
+      const computedStyle = window.getComputedStyle(header!);
+      const paddingX =
+        parseFloat(computedStyle.paddingLeft) +
+        parseFloat(computedStyle.paddingRight);
+      const gap = parseFloat(computedStyle.columnGap || computedStyle.gap || "0");
+
       if (!navOverflowsRef.current) {
-        // Nav is visible — detect if any item has wrapped to a second row
-        const children = Array.from(nav!.children) as HTMLElement[];
-        if (children.length <= 1) return;
-        const firstTop = children[0].getBoundingClientRect().top;
-        const wrapped = children.some(
-          (child, i) =>
-            i > 0 && Math.abs(child.getBoundingClientRect().top - firstTop) > 4
-        );
-        if (wrapped) {
+        const overflowing = nav!.scrollWidth > nav!.clientWidth + 1;
+        if (overflowing) {
           // Clone nav to measure its natural (no-wrap) width for the switch-back threshold
           const clone = nav!.cloneNode(true) as HTMLElement;
           clone.style.cssText =
@@ -90,10 +160,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           const navNaturalWidth = clone.scrollWidth;
           document.body.removeChild(clone);
 
-          const brand = header!.querySelector(".brand") as HTMLElement;
-          const brandWidth = brand?.offsetWidth ?? 0;
           switchBackThresholdRef.current =
-            brandWidth + 16 + navNaturalWidth + 40;
+            paddingX + brandWidth + navNaturalWidth + userActionsWidth + gap * 2 + 8;
 
           navOverflowsRef.current = true;
           setNavOverflows(true);
@@ -124,6 +192,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isPostStudio =
     pathname === "/posts/create" ||
     (pathname.startsWith("/posts/") && pathname !== "/posts");
+  const unreadCount = useMemo(
+    () => notifications.filter((notification) => !notification.is_read).length,
+    [notifications],
+  );
+  const previewNotifications = useMemo(() => notifications.slice(0, 4), [notifications]);
 
   return (
     <div className="app-shell">
@@ -191,15 +264,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               My Posts
             </Link>
           )}
-          {user && (
-            <Link
-              className={isNotifications ? "active" : ""}
-              to="/notifications"
-              onClick={() => setMenuOpen(false)}
-            >
-              Notifications
-            </Link>
-          )}
           <Link
             className={isPostStudio ? "active" : ""}
             to="/posts/create"
@@ -234,7 +298,115 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               Admin Queue
             </Link>
           )}
-          {user ? (
+          {!user && (
+            <Link
+              className={isAccount ? "active" : ""}
+              to="/login"
+              onClick={() => setMenuOpen(false)}
+            >
+              Login
+            </Link>
+          )}
+        </nav>
+        {user ? (
+          <div className="topbar-user-actions" ref={userActionsRef}>
+            <div
+              className={`notification-wrapper${notificationsOpen ? " notification-wrapper--open" : ""}`}
+              ref={notificationsRef}
+            >
+              <button
+                className={`notification-button${isNotifications ? " active" : ""}`}
+                aria-label={
+                  unreadCount > 0
+                    ? `Notifications: ${unreadCount} unread`
+                    : "Notifications"
+                }
+                aria-expanded={notificationsOpen}
+                onClick={() => {
+                  setNotificationsOpen((open) => !open);
+                  setDropdownOpen(false);
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M14.857 17.082a23.848 23.848 0 0 1-5.714 0m5.714 0a5.454 5.454 0 0 0 1.102-.393A1.84 1.84 0 0 0 17 14.96V11.25a5 5 0 1 0-10 0v3.71c0 .755.427 1.416 1.042 1.73.35.179.719.31 1.102.392m5.713 0A3 3 0 0 1 9.143 17.082" />
+                  <path d="M10 17.5a2 2 0 1 0 4 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="notification-badge" aria-hidden="true">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              {notificationsOpen && (
+                <div className="notification-panel">
+                  <div className="notification-panel-header">
+                    <div>
+                      <p className="notification-panel-tag">Inbox</p>
+                      <h3 className="notification-panel-title">Notifications</h3>
+                    </div>
+                    <span className="notification-panel-count">
+                      {unreadCount} unread
+                    </span>
+                  </div>
+
+                  {notificationsLoading ? (
+                    <p className="notification-panel-state">Loading…</p>
+                  ) : notificationsError ? (
+                    <p className="notification-panel-state">{notificationsError}</p>
+                  ) : previewNotifications.length === 0 ? (
+                    <p className="notification-panel-state">
+                      No notifications yet.
+                    </p>
+                  ) : (
+                    <div className="notification-preview-list">
+                      {previewNotifications.map((notification) => (
+                        <Link
+                          className={`notification-preview-item${notification.is_read ? "" : " unread"}`}
+                          key={notification.id}
+                          to="/notifications"
+                          onClick={() => {
+                            setNotificationsOpen(false);
+                            setMenuOpen(false);
+                          }}
+                        >
+                          <div className="notification-preview-meta">
+                            <span>{NOTIFICATION_LABELS[notification.type]}</span>
+                            <span>{formatNotificationDate(notification.created_at)}</span>
+                          </div>
+                          <strong className="notification-preview-title">
+                            {notification.title}
+                          </strong>
+                          <p className="notification-preview-message">
+                            {notification.message}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="notification-panel-footer">
+                    <Link
+                      className="notification-panel-link"
+                      to="/notifications"
+                      onClick={() => {
+                        setNotificationsOpen(false);
+                        setMenuOpen(false);
+                      }}
+                    >
+                      View all notifications
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
             <div
               className={`nav-avatar-wrapper${dropdownOpen ? " nav-avatar-wrapper--open" : ""}`}
               ref={dropdownRef}
@@ -243,7 +415,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 className="nav-avatar"
                 aria-label={`Account: ${user.username}`}
                 aria-expanded={dropdownOpen}
-                onClick={() => setDropdownOpen((o) => !o)}
+                onClick={() => {
+                  setDropdownOpen((o) => !o);
+                  setNotificationsOpen(false);
+                }}
               >
                 <svg
                   viewBox="0 0 448 512"
@@ -275,16 +450,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
-          ) : (
-            <Link
-              className={isAccount ? "active" : ""}
-              to="/login"
-              onClick={() => setMenuOpen(false)}
-            >
-              Login
-            </Link>
-          )}
-        </nav>
+          </div>
+        ) : null}
       </header>
       {showVerificationBanner && (
         <div className="email-banner">

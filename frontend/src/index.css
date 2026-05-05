@@ -82,8 +82,8 @@
   }
 
   .topbar {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 16px;
     padding: 16px 20px;
@@ -103,7 +103,7 @@
     margin: 0;
     color: var(--color-gg-yellow);
     font-family: var(--font-bungee);
-    font-size: clamp(28px, 3vw, 44px);
+    font-size: clamp(24px, 2.4vw, 38px);
     line-height: 1;
     letter-spacing: 0.02em;
     text-transform: uppercase;
@@ -116,9 +116,12 @@
 
   .nav {
     display: flex;
-    flex-wrap: wrap;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
     justify-content: flex-end;
     gap: 10px;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .nav a,
@@ -132,6 +135,8 @@
     font-weight: 600;
     line-height: 1;
     text-decoration: none;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .nav-button {
@@ -158,6 +163,204 @@
     border-color: rgba(255, 255, 255, 0.2);
     background: rgba(255, 255, 255, 0.08);
     color: #fff;
+  }
+
+  .topbar-user-actions {
+    display: flex;
+    align-items: center;
+    justify-self: end;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .notification-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .notification-button {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border: 3px solid rgba(255, 255, 255, 0.08);
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.86);
+    cursor: pointer;
+  }
+
+  .notification-button svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .notification-button:hover,
+  .notification-button.active,
+  .notification-wrapper--open .notification-button {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+  }
+
+  .notification-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 6px;
+    border: 2px solid rgba(27, 35, 42, 0.98);
+    border-radius: 9999px;
+    background: linear-gradient(180deg, #f16045, #c43822);
+    color: #fff7f1;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+  }
+
+  .notification-panel {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    width: min(390px, calc(100vw - 32px));
+    border: 3px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    background: linear-gradient(
+      180deg,
+      rgba(43, 54, 65, 0.99),
+      rgba(27, 35, 42, 0.99)
+    );
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    z-index: 220;
+  }
+
+  .notification-panel-header,
+  .notification-panel-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+  }
+
+  .notification-panel-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .notification-panel-tag {
+    margin: 0 0 4px;
+    color: rgba(255, 208, 74, 0.88);
+    font-family: var(--font-pixel);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .notification-panel-title {
+    margin: 0;
+    color: #fff8e6;
+    font-size: 22px;
+    line-height: 1.1;
+  }
+
+  .notification-panel-count {
+    padding: 8px 12px;
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .notification-panel-state {
+    margin: 0;
+    padding: 18px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 17px;
+  }
+
+  .notification-preview-list {
+    display: grid;
+  }
+
+  .notification-preview-item {
+    display: grid;
+    gap: 8px;
+    padding: 16px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: inherit;
+    text-decoration: none;
+    background: transparent;
+  }
+
+  .notification-preview-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .notification-preview-item.unread {
+    background: linear-gradient(
+      90deg,
+      rgba(228, 80, 54, 0.16),
+      rgba(255, 255, 255, 0)
+    );
+  }
+
+  .notification-preview-item.unread:hover {
+    background: linear-gradient(
+      90deg,
+      rgba(228, 80, 54, 0.22),
+      rgba(255, 255, 255, 0.04)
+    );
+  }
+
+  .notification-preview-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .notification-preview-title {
+    color: #fff8e6;
+    font-size: 18px;
+    line-height: 1.2;
+  }
+
+  .notification-preview-message {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 16px;
+    line-height: 1.3;
+  }
+
+  .notification-panel-footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    justify-content: flex-end;
+  }
+
+  .notification-panel-link {
+    color: var(--color-gg-yellow);
+    font-size: 16px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .notification-panel-link:hover {
+    color: #fff8e6;
   }
 
   .topbar-copy {
@@ -404,6 +607,10 @@
     display: none;
   }
 
+  .topbar--overflow .topbar-user-actions {
+    margin-left: 0;
+  }
+
   .topbar--overflow .nav-avatar {
     display: flex;
     justify-content: flex-end;
@@ -458,6 +665,10 @@
 
   .topbar--overflow .nav-dropdown-item {
     text-align: right;
+  }
+
+  .topbar--overflow .notification-panel {
+    right: 0;
   }
 
   .nav-hamburger {
@@ -2417,6 +2628,10 @@
       margin-left: auto;
     }
 
+    .topbar-user-actions {
+      margin-left: 0;
+    }
+
     .nav {
       display: none;
       order: 3;
@@ -2463,6 +2678,11 @@
       background: transparent;
       color: #f16045;
       border-color: transparent;
+    }
+
+    .notification-panel {
+      right: -8px;
+      width: min(360px, calc(100vw - 24px));
     }
 
     .nav-avatar-wrapper {
