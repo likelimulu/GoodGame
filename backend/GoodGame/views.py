@@ -403,7 +403,10 @@ def _get_or_create_tags(tag_names: List[str]) -> List[Tag]:
     """Get existing tags or create new ones; returns a list of Tag instances."""
     tags = []
     for name in tag_names[:5]:  # max 5 tags
-        tag, _ = Tag.objects.get_or_create(name=name.strip())
+        cleaned = name.strip()[:40]
+        if not cleaned:
+            continue
+        tag, _ = Tag.objects.get_or_create(name=cleaned)
         tags.append(tag)
     return tags
 
@@ -723,9 +726,11 @@ def list_posts(
 @router.get("/posts/{post_id}", response={200: PostOut, 404: ErrorOut})
 def get_post(request, post_id: int):
     """Retrieve a single post by id."""
-    post = _get_post_with_stats(post_id, request.user)
-    if post.status == Post.Status.DELETED:
-        return 404, {"error": "Post not found"}
+    qs = _annotate_post_stats(
+        _posts_with_related_data().exclude(status=Post.Status.DELETED)
+    )
+    post = get_object_or_404(qs, id=post_id)
+    _attach_current_user_vote([post], request.user)
     return 200, post
 
 
