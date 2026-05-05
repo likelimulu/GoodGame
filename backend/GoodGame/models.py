@@ -121,11 +121,12 @@ class Post(models.Model):
         default=Status.PUBLISHED,
     )
     is_edited = models.BooleanField(default=False)
+    is_pinned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-is_pinned", "-created_at"]
 
     def __str__(self):
         return self.title

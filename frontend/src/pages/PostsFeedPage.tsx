@@ -13,17 +13,22 @@ import type {
   Post,
   PostModerationReport,
   PostVoteSummary,
+  Tag,
 } from "../api/types";
 import { useAuth } from "../context/useAuth";
 import { useToast } from "../context/ToastContext";
 
-function sortPosts(posts: Post[], mineOnly: boolean) {
+function sortPosts(posts: Post[], mineOnly: boolean, serverSorted: boolean) {
+  if (serverSorted) return posts;
   return [...posts].sort((a, b) => {
     if (mineOnly) {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     }
+    if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
     if (a.is_priority !== b.is_priority) return a.is_priority ? -1 : 1;
-    if (b.vote_score !== a.vote_score) return b.vote_score - a.vote_score;
+    const wa = a.weighted_score ?? a.vote_score;
+    const wb = b.weighted_score ?? b.vote_score;
+    if (wb !== wa) return wb - wa;
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 }
@@ -50,12 +55,35 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [sortBy, setSortBy] = useState("");
+  const [filterTag, setFilterTag] = useState("");
+  const [filterAuthor, setFilterAuthor] = useState("");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const isTrusted = user?.is_trusted ?? false;
+
+  useEffect(() => {
+    if (isTrusted) {
+      api.get<Tag[]>("/tags").then(({ status, data }) => {
+        if (status === 200 && Array.isArray(data)) setAllTags(data);
+      });
+    }
+  }, [isTrusted]);
+
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
     const params = new URLSearchParams();
     if (selectedHubId !== "all") params.set("game_hub_id", selectedHubId);
     if (mineOnly) params.set("mine", "true");
+    if (isTrusted && sortBy) params.set("sort_by", sortBy);
+    if (isTrusted && filterTag) params.set("tag", filterTag);
+    if (isTrusted && filterAuthor) params.set("author", filterAuthor);
+    if (isTrusted && filterDateFrom) params.set("date_from", filterDateFrom);
+    if (isTrusted && filterDateTo) params.set("date_to", filterDateTo);
     const postPath = params.size > 0 ? `/posts?${params.toString()}` : "/posts";
 
     Promise.all([
@@ -67,7 +95,8 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
           setGameHubs(gameHubResponse.data);
         }
         if (postsResponse.status === 200 && Array.isArray(postsResponse.data)) {
-          setPosts(sortPosts(postsResponse.data as Post[], mineOnly));
+          const useServerOrder = isTrusted && !!sortBy;
+          setPosts(sortPosts(postsResponse.data as Post[], mineOnly, useServerOrder));
         } else if (postsResponse.status !== 0) {
           navigate(`/error/${postsResponse.status}`, { replace: true });
         } else {
@@ -82,7 +111,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [mineOnly, selectedHubId]);
+  }, [mineOnly, selectedHubId, sortBy, filterTag, filterAuthor, filterDateFrom, filterDateTo, isTrusted]);
 
   async function handleVote(post: Post, direction: 1 | -1) {
     if (!user) {
@@ -110,6 +139,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
               : currentPost,
           ),
           mineOnly,
+          isTrusted && !!sortBy,
         ),
       );
       return;
@@ -282,6 +312,96 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
               </select>
             </div>
 
+            {isTrusted && !mineOnly && (
+              <button
+                className="btn ghost"
+                type="button"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? "Hide Advanced Filters" : "Advanced Filters ✦"}
+              </button>
+            )}
+
+            {showAdvanced && isTrusted && !mineOnly && (
+              <div className="advanced-filters">
+                <p className="advanced-filters-title">Trusted User Filters</p>
+                <div className="advanced-filters-grid">
+                  <div className="field">
+                    <label htmlFor="sort-by">Sort By</label>
+                    <select
+                      id="sort-by"
+                      value={sortBy}
+                      onChange={(e) => { setLoading(true); setSortBy(e.target.value); }}
+                    >
+                      <option value="">Recommended</option>
+                      <option value="votes">Most Votes</option>
+                      <option value="newest">Newest</option>
+                      <option value="oldest">Oldest</option>
+                      <option value="most_commented">Most Commented</option>
+                      <option value="controversial">Controversial</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="filter-tag">Tag</label>
+                    <select
+                      id="filter-tag"
+                      value={filterTag}
+                      onChange={(e) => { setLoading(true); setFilterTag(e.target.value); }}
+                    >
+                      <option value="">All Tags</option>
+                      {allTags.map((t) => (
+                        <option key={t.id} value={t.name}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="filter-author">Author</label>
+                    <input
+                      id="filter-author"
+                      type="text"
+                      placeholder="Username..."
+                      value={filterAuthor}
+                      onChange={(e) => setFilterAuthor(e.target.value)}
+                      onBlur={() => setLoading(true)}
+                      onKeyDown={(e) => { if (e.key === "Enter") setLoading(true); }}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="filter-date-from">From</label>
+                    <input
+                      id="filter-date-from"
+                      type="date"
+                      value={filterDateFrom}
+                      onChange={(e) => { setLoading(true); setFilterDateFrom(e.target.value); }}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="filter-date-to">To</label>
+                    <input
+                      id="filter-date-to"
+                      type="date"
+                      value={filterDateTo}
+                      onChange={(e) => { setLoading(true); setFilterDateTo(e.target.value); }}
+                    />
+                  </div>
+                </div>
+                <button
+                  className="btn ghost"
+                  type="button"
+                  onClick={() => {
+                    setSortBy("");
+                    setFilterTag("");
+                    setFilterAuthor("");
+                    setFilterDateFrom("");
+                    setFilterDateTo("");
+                    setLoading(true);
+                  }}
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            )}
+
             {user ? (
               <Link
                 className="btn primary"
@@ -419,6 +539,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                       {mineOnly && post.status === "draft" && (
                         <span className="pill pill-draft">Draft</span>
                       )}
+                      {post.is_pinned && <span className="pill pill-pinned">📌 Pinned</span>}
                       {post.is_priority && <span className="pill pill-priority">Priority</span>}
                       {post.is_question && <span className="pill pill-question">Question</span>}
                       {post.has_spoilers && <span className="pill pill-warning">Spoilers</span>}
