@@ -31,7 +31,7 @@ function sortPosts(posts: Post[], mineOnly: boolean) {
 export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const openCommentsByDefault = searchParams.get("comments") === "open";
   const { addToast } = useToast();
 
@@ -51,6 +51,12 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (mineOnly && authLoading) return;
+    if (mineOnly && !user) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
     const controller = new AbortController();
     const { signal } = controller;
     const params = new URLSearchParams();
@@ -68,6 +74,8 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
         }
         if (postsResponse.status === 200 && Array.isArray(postsResponse.data)) {
           setPosts(sortPosts(postsResponse.data as Post[], mineOnly));
+        } else if (postsResponse.status === 401 && mineOnly) {
+          navigate("/login", { replace: true });
         } else if (postsResponse.status !== 0) {
           navigate(`/error/${postsResponse.status}`, { replace: true });
         } else {
@@ -82,7 +90,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [mineOnly, selectedHubId]);
+  }, [authLoading, mineOnly, navigate, selectedHubId, user]);
 
   async function handleVote(post: Post, direction: 1 | -1) {
     if (!user) {
