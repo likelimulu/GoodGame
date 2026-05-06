@@ -131,11 +131,14 @@ ty check .                   # Type check
 python manage.py makemigrations && python manage.py migrate  # Apply migrations
 ```
 
-**Frontend:**
+**Frontend** (from `frontend/`):
 ```bash
-npm run lint     # ESLint
-npm run format   # Prettier
-npm run build    # Production build
+npm run lint             # ESLint
+npm run format           # Prettier
+npm run build            # Production build
+npm test                 # Run all tests once
+npm run test:watch       # Watch mode — re-runs on file changes
+npm run test:coverage    # Run tests with coverage report
 ```
 
 ## Project Structure

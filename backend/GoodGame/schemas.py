@@ -2,15 +2,16 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 from ninja import Schema
+from pydantic import EmailStr, Field
 
 
 # ── Auth schemas ──────────────────────────────────────────────
 
 
 class SignupIn(Schema):
-    username: str
-    password: str
-    email: str
+    username: str = Field(..., min_length=3, max_length=150)
+    password: str = Field(..., min_length=8, max_length=128)
+    email: EmailStr
 
 
 class SignupOut(Schema):
@@ -19,8 +20,8 @@ class SignupOut(Schema):
 
 
 class LoginIn(Schema):
-    username: str
-    password: str
+    username: str = Field(..., max_length=150)
+    password: str = Field(..., max_length=128)
     remember_me: bool = False
 
 
@@ -30,6 +31,8 @@ class AuthUserOut(Schema):
     email: str
     role: str
     email_verified: bool = False
+    reputation_score: int = 0
+    is_trusted: bool = False
 
     @staticmethod
     def resolve_role(obj):
@@ -39,6 +42,21 @@ class AuthUserOut(Schema):
     def resolve_email_verified(obj):
         try:
             return obj.profile.email_verified
+        except Exception:
+            return False
+
+    @staticmethod
+    def resolve_reputation_score(obj):
+        try:
+            return obj.profile.reputation_score
+        except Exception:
+            return 0
+
+    @staticmethod
+    def resolve_is_trusted(obj):
+        from .models import HIGH_REPUTATION_THRESHOLD
+        try:
+            return obj.profile.reputation_score >= HIGH_REPUTATION_THRESHOLD
         except Exception:
             return False
 
@@ -77,8 +95,8 @@ class TagOut(Schema):
 
 class PostIn(Schema):
     game_hub_id: int
-    title: str
-    body: str
+    title: str = Field(..., min_length=1, max_length=300)
+    body: str = Field(..., min_length=1, max_length=50000)
     tags: List[str] = []
     is_question: bool = False
     has_spoilers: bool = False
@@ -87,8 +105,8 @@ class PostIn(Schema):
 
 class PostUpdateIn(Schema):
     game_hub_id: Optional[int] = None
-    title: Optional[str] = None
-    body: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=300)
+    body: Optional[str] = Field(None, max_length=50000)
     tags: Optional[List[str]] = None
     is_question: Optional[bool] = None
     has_spoilers: Optional[bool] = None
@@ -150,6 +168,7 @@ class PostOut(Schema):
     status: str
     is_edited: bool
     is_priority: bool = False
+    is_pinned: bool = False
     created_at: datetime
     updated_at: datetime
     vote_score: int
@@ -157,6 +176,7 @@ class PostOut(Schema):
     downvote_count: int
     current_user_vote: int = 0
     comment_count: int = 0
+    weighted_score: float = 0.0
 
     @staticmethod
     def resolve_is_priority(obj):
@@ -201,7 +221,7 @@ class PostVoteIn(Schema):
 
 
 class PostReportCreateIn(Schema):
-    reason: str
+    reason: str = Field(..., min_length=1, max_length=500)
 
 
 class PostReportAuthorOut(Schema):
@@ -226,7 +246,7 @@ class PostModerationReportOut(Schema):
 
 class PostModerationActionIn(Schema):
     action: Literal["warn", "remove", "escalate", "dismiss"]
-    note: str = ""
+    note: str = Field("", max_length=1000)
 
 
 class ModerationQueueItemOut(Schema):
@@ -297,12 +317,12 @@ class UserRoleOut(Schema):
 
 
 class ModeratorRequestCreateIn(Schema):
-    reason: str = ""
+    reason: str = Field("", max_length=1000)
 
 
 class ModeratorRequestReviewIn(Schema):
     status: Literal["approved", "rejected"]
-    review_note: str = ""
+    review_note: str = Field("", max_length=1000)
 
 
 class ModeratorRequestUserOut(Schema):
@@ -335,7 +355,7 @@ class ModeratorRequestOut(Schema):
 
 
 class DeveloperFeedbackIn(Schema):
-    message: str
+    message: str = Field(..., min_length=1, max_length=2000)
 
 
 class DeveloperFeedbackOut(Schema):

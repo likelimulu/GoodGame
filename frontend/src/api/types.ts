@@ -6,6 +6,8 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   email_verified: boolean;
+  reputation_score: number;
+  is_trusted: boolean;
 }
 
 export interface GameHub {
@@ -40,6 +42,7 @@ export interface Post {
   status: PostStatus;
   is_edited: boolean;
   is_priority: boolean;
+  is_pinned: boolean;
   created_at: string;
   updated_at: string;
   vote_score: number;
@@ -47,6 +50,7 @@ export interface Post {
   downvote_count: number;
   current_user_vote: number;
   comment_count: number;
+  weighted_score: number;
 }
 
 export interface SearchUser {

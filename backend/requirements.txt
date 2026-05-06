@@ -4,6 +4,9 @@ Django>=4.2,<5.0
 # Django Ninja for REST API
 django-ninja>=1.5.3
 
+# Email validation (required for pydantic EmailStr)
+email-validator>=2.0
+
 # CORS headers for frontend integration
 django-cors-headers>=4.9.0
 

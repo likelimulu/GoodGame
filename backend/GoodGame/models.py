@@ -1,4 +1,7 @@
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.signals import m2m_changed
+from django.dispatch import receiver
 from django.contrib.auth.models import User
 
 HIGH_REPUTATION_THRESHOLD = 5
@@ -88,6 +91,26 @@ class GameHub(models.Model):
         return self.name
 
 
+@receiver(m2m_changed, sender=GameHub.developers.through)
+def enforce_single_hub_per_developer(sender, action, instance, pk_set, **kwargs):
+    """Prevent a developer user from being assigned to more than one GameHub."""
+    if action != "pre_add" or not pk_set:
+        return
+    for user_id in pk_set:
+        already_assigned = (
+            GameHub.objects.filter(developers__id=user_id)
+            .exclude(pk=instance.pk)
+            .first()
+        )
+        if already_assigned:
+            from django.contrib.auth.models import User as _User
+            username = _User.objects.filter(pk=user_id).values_list("username", flat=True).first()
+            raise ValidationError(
+                f"'{username}' is already a developer for '{already_assigned.name}'. "
+                "A developer may only be assigned to one hub."
+            )
+
+
 class Tag(models.Model):
     """Topic tag for posts (e.g. Strategy, Bug, Patch)."""
     name = models.CharField(max_length=40, unique=True)
@@ -121,11 +144,12 @@ class Post(models.Model):
         default=Status.PUBLISHED,
     )
     is_edited = models.BooleanField(default=False)
+    is_pinned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-is_pinned", "-created_at"]
 
     def __str__(self):
         return self.title
