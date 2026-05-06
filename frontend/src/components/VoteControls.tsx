@@ -19,6 +19,7 @@ export default function VoteControls({
         className={`vote-btn ${current_user_vote === 1 ? "active up" : ""}`}
         type="button"
         disabled={busy}
+        aria-label="Upvote"
         aria-pressed={current_user_vote === 1}
         onClick={() => onVote(1)}
       >
@@ -29,6 +30,7 @@ export default function VoteControls({
         className={`vote-btn ${current_user_vote === -1 ? "active down" : ""}`}
         type="button"
         disabled={busy}
+        aria-label="Downvote"
         aria-pressed={current_user_vote === -1}
         onClick={() => onVote(-1)}
       >
