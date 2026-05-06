@@ -8,6 +8,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from .models import (
+    DeveloperFeedback,
+    EmailVerificationToken,
     HIGH_REPUTATION_THRESHOLD,
     GameHub,
     ModeratorAccessRequest,
@@ -109,6 +111,34 @@ class AuthSessionApiTests(TestCase):
         self.assertEqual(response.json()["role"], UserProfile.Role.CONTRIBUTOR)
 
 
+    def test_login_with_nonexistent_username_returns_401(self):
+        response = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "nobody", "password": "any-password"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error"], "Invalid username or password")
+
+    def test_logout_when_not_authenticated_succeeds(self):
+        response = self.client.post("/api/auth/logout")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message"], "Logged out")
+
+    def test_me_returns_email_verified_field(self):
+        self.user.profile.email_verified = True
+        self.user.profile.save()
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": self.username, "password": self.password}),
+            content_type="application/json",
+        )
+        response = self.client.get("/api/auth/me")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("email_verified", response.json())
+        self.assertTrue(response.json()["email_verified"])
+
+
 class SignupApiTests(TestCase):
     def test_signup_creates_user(self):
         response = self.client.post(
@@ -201,6 +231,35 @@ class UserRoleApiTests(TestCase):
         self.target_user.profile.refresh_from_db()
         self.assertEqual(self.target_user.profile.role, UserProfile.Role.MODERATOR)
         self.assertEqual(response.json()["role"], UserProfile.Role.MODERATOR)
+
+
+    def test_admin_update_nonexistent_user_role_returns_404(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "adminuser", "password": "admin-pass-123"}),
+            content_type="application/json",
+        )
+        response = self.client.put(
+            "/api/users/99999/role",
+            data=json.dumps({"role": UserProfile.Role.MODERATOR}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_can_promote_user_to_developer_role(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "adminuser", "password": "admin-pass-123"}),
+            content_type="application/json",
+        )
+        response = self.client.put(
+            f"/api/users/{self.target_user.id}/role",
+            data=json.dumps({"role": UserProfile.Role.DEVELOPER}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.target_user.profile.refresh_from_db()
+        self.assertEqual(self.target_user.profile.role, UserProfile.Role.DEVELOPER)
 
 
 class ModeratorAccessRequestApiTests(TestCase):
@@ -326,6 +385,106 @@ class ModeratorAccessRequestApiTests(TestCase):
         self.request_user.profile.refresh_from_db()
         self.assertEqual(request_record.status, ModeratorAccessRequest.Status.REJECTED)
         self.assertEqual(self.request_user.profile.role, UserProfile.Role.CONTRIBUTOR)
+
+
+    def test_list_requests_requires_authentication(self):
+        response = self.client.get("/api/moderator-requests")
+        self.assertEqual(response.status_code, 401)
+
+    def test_review_request_requires_authentication(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user, reason="Test"
+        )
+        response = self.client.put(
+            f"/api/moderator-requests/{request_record.id}",
+            data=json.dumps({"status": "approved"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_review_request_requires_admin_access(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user, reason="Test"
+        )
+        self._login("requester", "request-pass-123")
+        response = self.client.put(
+            f"/api/moderator-requests/{request_record.id}",
+            data=json.dumps({"status": "approved"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_review_nonexistent_request_returns_404(self):
+        self._login("adminmod", "admin-pass-123")
+        response = self.client.put(
+            "/api/moderator-requests/99999",
+            data=json.dumps({"status": "approved"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_review_already_reviewed_request_returns_409(self):
+        request_record = ModeratorAccessRequest.objects.create(
+            user=self.request_user,
+            reason="Test",
+            status=ModeratorAccessRequest.Status.APPROVED,
+        )
+        self._login("adminmod", "admin-pass-123")
+        response = self.client.put(
+            f"/api/moderator-requests/{request_record.id}",
+            data=json.dumps({"status": "rejected"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "Moderator request already reviewed")
+
+    def test_user_with_moderator_role_cannot_create_request(self):
+        self.request_user.profile.role = UserProfile.Role.MODERATOR
+        self.request_user.profile.save()
+        self._login("requester", "request-pass-123")
+        response = self.client.post(
+            "/api/users/me/moderator-request",
+            data=json.dumps({"reason": "Already a mod"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "User already has moderation access")
+
+    def test_user_with_admin_role_cannot_create_request(self):
+        self.request_user.profile.role = UserProfile.Role.ADMIN
+        self.request_user.profile.save()
+        self._login("requester", "request-pass-123")
+        response = self.client.post(
+            "/api/users/me/moderator-request",
+            data=json.dumps({"reason": "Already admin"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "User already has moderation access")
+
+    def test_admin_can_filter_requests_by_pending_status(self):
+        pending_user = User.objects.create_user(
+            username="pending_user", password="pass-123", email="pending@example.com"
+        )
+        approved_user = User.objects.create_user(
+            username="approved_user", password="pass-456", email="approved@example.com"
+        )
+        pending = ModeratorAccessRequest.objects.create(
+            user=pending_user, reason="Pending"
+        )
+        ModeratorAccessRequest.objects.create(
+            user=approved_user,
+            reason="Approved",
+            status=ModeratorAccessRequest.Status.APPROVED,
+        )
+        self._login("adminmod", "admin-pass-123")
+
+        response = self.client.get("/api/moderator-requests?status=pending")
+
+        self.assertEqual(response.status_code, 200)
+        ids = [r["id"] for r in response.json()]
+        self.assertIn(pending.id, ids)
+        self.assertEqual(len(ids), 1)
 
 
 class GameHubApiTests(TestCase):
@@ -898,6 +1057,55 @@ class PostApiTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+    def test_update_post_requires_authentication(self):
+        post = Post.objects.create(
+            game_hub=self.hub, author=self.user, title="Auth test", body="x",
+            status=Post.Status.PUBLISHED,
+        )
+        response = self.client.put(
+            f"/api/posts/{post.id}",
+            data=json.dumps({"title": "Hacked"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_update_nonexistent_post_returns_404(self):
+        self._login()
+        response = self.client.put(
+            "/api/posts/99999",
+            data=json.dumps({"title": "Ghost"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_delete_post_requires_authentication(self):
+        post = Post.objects.create(
+            game_hub=self.hub, author=self.user, title="Auth delete", body="x",
+            status=Post.Status.PUBLISHED,
+        )
+        response = self.client.delete(f"/api/posts/{post.id}")
+        self.assertEqual(response.status_code, 401)
+
+    def test_delete_nonexistent_post_returns_404(self):
+        self._login()
+        response = self.client.delete("/api/posts/99999")
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_nonexistent_post_returns_404(self):
+        response = self.client.get("/api/posts/99999")
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_draft_post_returns_200(self):
+        # Draft posts are visible via direct GET (only DELETED triggers 404)
+        draft = Post.objects.create(
+            game_hub=self.hub, author=self.user, title="Draft preview", body="wip",
+            status=Post.Status.DRAFT,
+        )
+        response = self.client.get(f"/api/posts/{draft.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "draft")
+
+
 class PostVoteApiTests(TestCase):
     def setUp(self):
         self.author = User.objects.create_user(
@@ -1147,6 +1355,31 @@ class PostCommentApiTests(TestCase):
             data={"body": "Looks good."},
         )
 
+        self.assertEqual(response.status_code, 404)
+
+
+    def test_list_comments_on_deleted_post_returns_404(self):
+        deleted_post = Post.objects.create(
+            game_hub=self.hub, author=self.author, title="Deleted",
+            body="Gone", status=Post.Status.DELETED,
+        )
+        response = self.client.get(f"/api/posts/{deleted_post.id}/comments")
+        self.assertEqual(response.status_code, 404)
+
+    def test_list_comments_on_nonexistent_post_returns_404(self):
+        response = self.client.get("/api/posts/99999/comments")
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_comment_on_deleted_post_returns_404(self):
+        deleted_post = Post.objects.create(
+            game_hub=self.hub, author=self.author, title="Removed",
+            body="Gone", status=Post.Status.DELETED,
+        )
+        self._login()
+        response = self.client.post(
+            f"/api/posts/{deleted_post.id}/comments",
+            data={"body": "Still here?"},
+        )
         self.assertEqual(response.status_code, 404)
 
 
@@ -1637,6 +1870,96 @@ class PostModerationApiTests(TestCase):
         notification.refresh_from_db()
         self.assertFalse(notification.is_read)
 
+    # ── Moderation queue auth/access ──────────────────────────
+
+    def test_moderation_queue_requires_authentication(self):
+        response = self.client.get("/api/moderation/queue")
+        self.assertEqual(response.status_code, 401)
+
+    def test_admin_can_access_moderation_queue(self):
+        PostModerationReport.objects.create(
+            post=self.post, reporter=self.reporter, reason="Admin queue test"
+        )
+        self._login("adminqueue", "admin-pass-123")
+        response = self.client.get("/api/moderation/queue")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+
+    # ── Moderation actions auth/access ────────────────────────
+
+    def test_moderate_post_requires_authentication(self):
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "warn", "note": ""}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_non_moderator_cannot_take_moderation_action(self):
+        PostModerationReport.objects.create(
+            post=self.post, reporter=self.reporter, reason="Test"
+        )
+        self._login("reporter", "report-pass-123")
+        response = self.client.post(
+            f"/api/moderation/posts/{self.post.id}/actions",
+            data=json.dumps({"action": "warn", "note": ""}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_moderate_nonexistent_post_returns_404(self):
+        self._login("moderator", "mod-pass-123")
+        response = self.client.post(
+            "/api/moderation/posts/99999/actions",
+            data=json.dumps({"action": "warn", "note": ""}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_moderate_post_with_no_active_reports_returns_409(self):
+        # Post exists but has no reports
+        unreported_post = Post.objects.create(
+            game_hub=self.hub, author=self.author,
+            title="Clean post", body="No complaints.",
+            status=Post.Status.PUBLISHED,
+        )
+        self._login("moderator", "mod-pass-123")
+        response = self.client.post(
+            f"/api/moderation/posts/{unreported_post.id}/actions",
+            data=json.dumps({"action": "warn", "note": ""}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "No active moderation reports for this post")
+
+    # ── Report validation ─────────────────────────────────────
+
+    def test_report_post_with_empty_reason_returns_400(self):
+        self._login("reporter", "report-pass-123")
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/reports",
+            data=json.dumps({"reason": "   "}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Report reason is required")
+
+    # ── Notification auth ─────────────────────────────────────
+
+    def test_mark_notification_read_requires_authentication(self):
+        notification = Notification.objects.create(
+            recipient=self.author, actor=self.moderator, post=self.post,
+            type=Notification.Type.MODERATION_WARNING,
+            title="Warning", message="Test.",
+        )
+        response = self.client.post(f"/api/notifications/{notification.id}/read")
+        self.assertEqual(response.status_code, 401)
+
+    def test_mark_nonexistent_notification_read_returns_404(self):
+        self._login("author", "author-pass-123")
+        response = self.client.post("/api/notifications/99999/read")
+        self.assertEqual(response.status_code, 404)
+
 
 # ── GG-15  Developer pinning tests ────────────────────────────────
 
@@ -1858,3 +2181,331 @@ class AdvancedFilteringTests(TestCase):
         data = response.json()
         self.assertTrue(data["is_trusted"])
         self.assertGreaterEqual(data["reputation_score"], HIGH_REPUTATION_THRESHOLD)
+
+
+class EmailVerificationApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="unverified",
+            password="pass-123",
+            email="unverified@example.com",
+        )
+        # profile.email_verified defaults to False
+
+    def _make_token(self, expired=False, used=False):
+        expiry = timezone.now() + timedelta(hours=24)
+        if expired:
+            expiry = timezone.now() - timedelta(hours=1)
+        token_obj = EmailVerificationToken.objects.create(
+            user=self.user,
+            token="test-token-abc123",
+            expires_at=expiry,
+        )
+        if used:
+            token_obj.used_at = timezone.now()
+            token_obj.save(update_fields=["used_at"])
+        return token_obj
+
+    def test_verify_email_with_valid_token(self):
+        self._make_token()
+        response = self.client.post(
+            "/api/auth/verify-email",
+            data=json.dumps({"token": "test-token-abc123"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message"], "Email verified successfully")
+        self.user.profile.refresh_from_db()
+        self.assertTrue(self.user.profile.email_verified)
+
+    def test_verify_email_marks_token_as_used(self):
+        token_obj = self._make_token()
+        self.client.post(
+            "/api/auth/verify-email",
+            data=json.dumps({"token": "test-token-abc123"}),
+            content_type="application/json",
+        )
+        token_obj.refresh_from_db()
+        self.assertIsNotNone(token_obj.used_at)
+
+    def test_verify_email_with_invalid_token_returns_400(self):
+        response = self.client.post(
+            "/api/auth/verify-email",
+            data=json.dumps({"token": "not-a-real-token"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Invalid verification token")
+
+    def test_verify_email_with_expired_token_returns_400(self):
+        self._make_token(expired=True)
+        response = self.client.post(
+            "/api/auth/verify-email",
+            data=json.dumps({"token": "test-token-abc123"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("expired", response.json()["error"].lower())
+
+    def test_verify_email_with_already_used_token_returns_409(self):
+        self._make_token(used=True)
+        response = self.client.post(
+            "/api/auth/verify-email",
+            data=json.dumps({"token": "test-token-abc123"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "This token has already been used")
+
+    def test_resend_verification_requires_authentication(self):
+        response = self.client.post("/api/auth/resend-verification")
+        self.assertEqual(response.status_code, 401)
+
+    def test_resend_verification_for_unverified_user_returns_200(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "unverified", "password": "pass-123"}),
+            content_type="application/json",
+        )
+        response = self.client.post("/api/auth/resend-verification")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message"], "Verification email sent")
+        self.assertTrue(EmailVerificationToken.objects.filter(user=self.user).exists())
+
+    def test_resend_verification_for_already_verified_user_returns_409(self):
+        self.user.profile.email_verified = True
+        self.user.profile.save()
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "unverified", "password": "pass-123"}),
+            content_type="application/json",
+        )
+        response = self.client.post("/api/auth/resend-verification")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "Email is already verified")
+
+
+class DeveloperFeedbackApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="player", password="pass-123", email="player@example.com"
+        )
+        self.developer = User.objects.create_user(
+            username="devuser", password="dev-pass-123", email="dev@example.com"
+        )
+        self.developer.profile.role = UserProfile.Role.DEVELOPER
+        self.developer.profile.save()
+
+        self.hub = GameHub.objects.create(name="Hollow Hub", slug="hollow-hub")
+        self.hub.developers.add(self.developer)
+
+    def _login(self, username="player", password="pass-123"):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": username, "password": password}),
+            content_type="application/json",
+        )
+
+    def test_submit_feedback_requires_authentication(self):
+        response = self.client.post(
+            f"/api/gamehubs/{self.hub.id}/feedback",
+            data=json.dumps({"message": "Great game!"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_user_can_submit_feedback_to_hub(self):
+        self._login()
+        response = self.client.post(
+            f"/api/gamehubs/{self.hub.id}/feedback",
+            data=json.dumps({"message": "Love the lore updates."}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["from_username"], "player")
+        self.assertEqual(response.json()["game_hub"]["id"], self.hub.id)
+        self.assertTrue(
+            DeveloperFeedback.objects.filter(from_user=self.user, game_hub=self.hub).exists()
+        )
+
+    def test_developer_cannot_submit_feedback_to_own_hub(self):
+        self._login("devuser", "dev-pass-123")
+        response = self.client.post(
+            f"/api/gamehubs/{self.hub.id}/feedback",
+            data=json.dumps({"message": "Self-feedback attempt"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "You cannot submit feedback to a hub you develop")
+
+    def test_submit_feedback_to_nonexistent_hub_returns_404(self):
+        self._login()
+        response = self.client.post(
+            "/api/gamehubs/99999/feedback",
+            data=json.dumps({"message": "Ghost hub"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_submit_feedback_with_empty_message_returns_400(self):
+        self._login()
+        response = self.client.post(
+            f"/api/gamehubs/{self.hub.id}/feedback",
+            data=json.dumps({"message": "   "}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Message is required")
+
+    def test_submit_feedback_message_too_long_returns_400(self):
+        self._login()
+        response = self.client.post(
+            f"/api/gamehubs/{self.hub.id}/feedback",
+            data=json.dumps({"message": "x" * (DeveloperFeedback.MAX_MESSAGE_LENGTH + 1)}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cannot exceed", response.json()["error"])
+
+    def test_feedback_cooldown_prevents_rapid_resubmit(self):
+        self._login()
+        self.client.post(
+            f"/api/gamehubs/{self.hub.id}/feedback",
+            data=json.dumps({"message": "First message"}),
+            content_type="application/json",
+        )
+        response = self.client.post(
+            f"/api/gamehubs/{self.hub.id}/feedback",
+            data=json.dumps({"message": "Second message immediately after"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("wait", response.json()["error"].lower())
+
+
+class DeveloperPortalApiTests(TestCase):
+    def setUp(self):
+        self.developer = User.objects.create_user(
+            username="portaldev", password="dev-pass-123", email="portaldev@example.com"
+        )
+        self.developer.profile.role = UserProfile.Role.DEVELOPER
+        self.developer.profile.save()
+
+        self.contributor = User.objects.create_user(
+            username="contrib", password="contrib-pass-123", email="contrib@example.com"
+        )
+
+        self.hub = GameHub.objects.create(name="Portal Hub", slug="portal-hub")
+        self.other_hub = GameHub.objects.create(name="Other Hub", slug="other-hub")
+        self.hub.developers.add(self.developer)
+
+        self.feedback1 = DeveloperFeedback.objects.create(
+            game_hub=self.hub, from_user=self.contributor, message="First feedback"
+        )
+        self.feedback2 = DeveloperFeedback.objects.create(
+            game_hub=self.hub, from_user=self.contributor, message="Second feedback"
+        )
+
+    def _login_dev(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "portaldev", "password": "dev-pass-123"}),
+            content_type="application/json",
+        )
+
+    def _login_contrib(self):
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "contrib", "password": "contrib-pass-123"}),
+            content_type="application/json",
+        )
+
+    # ── GET /developer/gamehubs ───────────────────────────────
+
+    def test_list_developer_gamehubs_requires_authentication(self):
+        response = self.client.get("/api/developer/gamehubs")
+        self.assertEqual(response.status_code, 401)
+
+    def test_non_developer_cannot_list_developer_gamehubs(self):
+        self._login_contrib()
+        response = self.client.get("/api/developer/gamehubs")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "Developer access required")
+
+    def test_developer_can_list_assigned_hubs(self):
+        self._login_dev()
+        response = self.client.get("/api/developer/gamehubs")
+        self.assertEqual(response.status_code, 200)
+        hub_ids = [h["id"] for h in response.json()]
+        self.assertIn(self.hub.id, hub_ids)
+        self.assertNotIn(self.other_hub.id, hub_ids)
+
+    # ── GET /developer/feedback ───────────────────────────────
+
+    def test_list_developer_feedback_requires_authentication(self):
+        response = self.client.get("/api/developer/feedback")
+        self.assertEqual(response.status_code, 401)
+
+    def test_non_developer_cannot_list_developer_feedback(self):
+        self._login_contrib()
+        response = self.client.get("/api/developer/feedback")
+        self.assertEqual(response.status_code, 403)
+
+    def test_developer_can_list_all_feedback(self):
+        self._login_dev()
+        response = self.client.get("/api/developer/feedback")
+        self.assertEqual(response.status_code, 200)
+        ids = [f["id"] for f in response.json()]
+        self.assertIn(self.feedback1.id, ids)
+        self.assertIn(self.feedback2.id, ids)
+
+    def test_developer_feedback_filtered_by_hub_id(self):
+        # feedback for other_hub should not appear
+        other_feedback = DeveloperFeedback.objects.create(
+            game_hub=self.other_hub, from_user=self.contributor, message="Wrong hub"
+        )
+        self._login_dev()
+        response = self.client.get(f"/api/developer/feedback?game_hub_id={self.hub.id}")
+        self.assertEqual(response.status_code, 200)
+        ids = [f["id"] for f in response.json()]
+        self.assertIn(self.feedback1.id, ids)
+        self.assertNotIn(other_feedback.id, ids)
+
+    def test_developer_feedback_filter_by_unassigned_hub_returns_empty(self):
+        self._login_dev()
+        response = self.client.get(f"/api/developer/feedback?game_hub_id={self.other_hub.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+    def test_developer_feedback_invalid_date_from_returns_400(self):
+        self._login_dev()
+        response = self.client.get("/api/developer/feedback?date_from=not-a-date")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("date_from", response.json()["error"])
+
+    def test_developer_feedback_invalid_date_to_returns_400(self):
+        self._login_dev()
+        response = self.client.get("/api/developer/feedback?date_to=31-12-2025")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("date_to", response.json()["error"])
+
+    def test_developer_feedback_date_from_after_date_to_returns_400(self):
+        self._login_dev()
+        response = self.client.get(
+            "/api/developer/feedback?date_from=2025-12-31&date_to=2025-01-01"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("date_from", response.json()["error"])
+
+    def test_developer_feedback_filtered_by_date_from(self):
+        # Set feedback1 far in the past and feedback2 in the future (relative to filter)
+        DeveloperFeedback.objects.filter(id=self.feedback1.id).update(
+            created_at=timezone.now() - timedelta(days=10)
+        )
+        DeveloperFeedback.objects.filter(id=self.feedback2.id).update(
+            created_at=timezone.now()
+        )
+        self._login_dev()
+        response = self.client.get("/api/developer/feedback?date_from=2099-01-01")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
