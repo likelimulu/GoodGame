@@ -1,8 +1,6 @@
 import logging
 import os
 import secrets
-
-logger = logging.getLogger("GoodGame")
 from datetime import datetime as datetime_class, timedelta
 from typing import List, Optional
 
@@ -20,6 +18,8 @@ from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.text import get_valid_filename
+
+logger = logging.getLogger("GoodGame")
 
 from .models import (
     HIGH_REPUTATION_THRESHOLD,
@@ -497,8 +497,6 @@ def _annotate_post_stats(queryset):
             ),
             Value(0),
         ),
-        _trusted_up=Coalesce(Subquery(trusted_upvotes, output_field=IntegerField()), Value(0)),
-        _trusted_down=Coalesce(Subquery(trusted_downvotes, output_field=IntegerField()), Value(0)),
         weighted_score=Coalesce(
             Subquery(
                 vote_totals.annotate(total=Sum("value")).values("total")[:1],
@@ -647,10 +645,11 @@ def create_post(request, data: PostIn):
 
     game_hub = get_object_or_404(GameHub, id=data.game_hub_id)
 
-    if _is_developer(request.user) and not request.user.developed_hubs.filter(id=game_hub.id).exists():
+    is_developer = _is_developer(request.user)
+    if is_developer and not request.user.developed_hubs.filter(id=game_hub.id).exists():
         return 403, {"error": "Developers can only post in their assigned hubs"}
 
-    auto_pin = _is_developer(request.user) and request.user.developed_hubs.filter(id=game_hub.id).exists()
+    auto_pin = is_developer
 
     post = Post.objects.create(
         game_hub=game_hub,
