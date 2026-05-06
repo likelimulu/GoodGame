@@ -60,7 +60,7 @@ resource "azurerm_container_app" "django" {
       image   = "${azurerm_container_registry.main.login_server}/${var.app_name}-api:latest"
       cpu     = 0.5
       memory  = "1Gi"
-      command = ["/bin/sh", "-c", "python manage.py migrate --noinput && python manage.py seed_test_users && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"]
+      command = ["/entrypoint.sh"]
 
       env {
         name        = "SECRET_KEY"

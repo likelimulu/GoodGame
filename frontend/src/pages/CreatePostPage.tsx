@@ -5,11 +5,13 @@ import TagEditor from "../components/TagEditor";
 import { api } from "../api/client";
 import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/useAuth";
 
 export default function CreatePostPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { addToast } = useToast();
+  const { user } = useAuth();
 
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
   const [selectedHubId, setSelectedHubId] = useState("");
@@ -17,9 +19,11 @@ export default function CreatePostPage() {
   const [submitting, setSubmitting] = useState(false);
   const requestedHubId = useMemo(() => searchParams.get("hub") ?? "", [searchParams]);
 
+  const hubsEndpoint = user?.role === "developer" ? "/developer/gamehubs" : "/gamehubs";
+
   useEffect(() => {
     const controller = new AbortController();
-    api.get<GameHub[]>("/gamehubs", controller.signal).then(({ status, data }) => {
+    api.get<GameHub[]>(hubsEndpoint, controller.signal).then(({ status, data }) => {
       if (status !== 200 || !Array.isArray(data)) return;
       setGameHubs(data);
       if (data.length === 0) return;
@@ -33,7 +37,7 @@ export default function CreatePostPage() {
       setSelectedHubId(String(data[0].id));
     });
     return () => controller.abort();
-  }, [requestedHubId]);
+  }, [requestedHubId, hubsEndpoint]);
 
   async function handleSubmit(
     e: { preventDefault(): void; currentTarget: HTMLFormElement },
