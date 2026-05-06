@@ -1067,6 +1067,23 @@ class PostCommentApiTests(TestCase):
     def test_create_comment_with_attachment(self):
         self._login()
         attachment = SimpleUploadedFile(
+            "route-notes.jpg",
+            b"\xff\xd8\xff\xe0",  # minimal JPEG header bytes
+            content_type="image/jpeg",
+        )
+
+        response = self.client.post(
+            f"/api/posts/{self.post.id}/comments",
+            data={"body": "Attached my farming route.", "attachment": attachment},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["attachment_name"], "route-notes.jpg")
+        self.assertIn("/media/comment_attachments/route-notes", response.json()["attachment_url"])
+
+    def test_create_comment_with_disallowed_attachment_type(self):
+        self._login()
+        attachment = SimpleUploadedFile(
             "route-notes.txt",
             b"farm runes at the palace approach",
             content_type="text/plain",
@@ -1077,9 +1094,8 @@ class PostCommentApiTests(TestCase):
             data={"body": "Attached my farming route.", "attachment": attachment},
         )
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["attachment_name"], "route-notes.txt")
-        self.assertIn("/media/comment_attachments/route-notes", response.json()["attachment_url"])
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not allowed", response.json()["error"])
 
     def test_posts_include_comment_count(self):
         PostComment.objects.create(post=self.post, author=self.commenter, body="One")
