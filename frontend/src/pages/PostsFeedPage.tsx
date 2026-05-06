@@ -36,7 +36,7 @@ function sortPosts(posts: Post[], mineOnly: boolean, serverSorted: boolean) {
 export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const openCommentsByDefault = searchParams.get("comments") === "open";
   const { addToast } = useToast();
 
@@ -74,6 +74,12 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
   }, [isTrusted]);
 
   useEffect(() => {
+    if (mineOnly && authLoading) return;
+    if (mineOnly && !user) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
     const controller = new AbortController();
     const { signal } = controller;
     const params = new URLSearchParams();
@@ -97,6 +103,8 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
         if (postsResponse.status === 200 && Array.isArray(postsResponse.data)) {
           const useServerOrder = isTrusted && !!sortBy;
           setPosts(sortPosts(postsResponse.data as Post[], mineOnly, useServerOrder));
+        } else if (postsResponse.status === 401 && mineOnly) {
+          navigate("/login", { replace: true });
         } else if (postsResponse.status !== 0) {
           navigate(`/error/${postsResponse.status}`, { replace: true });
         } else {
@@ -111,7 +119,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [mineOnly, selectedHubId, sortBy, filterTag, filterAuthor, filterDateFrom, filterDateTo, isTrusted]);
+  }, [authLoading, mineOnly, navigate, user, selectedHubId, sortBy, filterTag, filterAuthor, filterDateFrom, filterDateTo, isTrusted]);
 
   async function handleVote(post: Post, direction: 1 | -1) {
     if (!user) {
