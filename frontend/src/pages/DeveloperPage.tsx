@@ -54,7 +54,8 @@ export default function DeveloperPage() {
           setPosts(
             [...(postsRes.data as Post[])].sort(
               (a, b) =>
-                new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+                new Date(b.updated_at).getTime() -
+                new Date(a.updated_at).getTime()
             )
           );
         } else if (postsRes.status !== 0) {
@@ -84,9 +85,13 @@ export default function DeveloperPage() {
     const query = params.toString();
     const path = query ? `/developer/feedback?${query}` : "/developer/feedback";
 
-    setFeedbackLoading(true);
-    setFeedbackError(null);
-    api.get<DeveloperFeedback[] | ApiError>(path, signal)
+    const startFrame = window.requestAnimationFrame(() => {
+      setFeedbackLoading(true);
+      setFeedbackError(null);
+    });
+
+    api
+      .get<DeveloperFeedback[] | ApiError>(path, signal)
       .then((res) => {
         if (signal.aborted) return;
         if (res.status === 200 && Array.isArray(res.data)) {
@@ -95,17 +100,24 @@ export default function DeveloperPage() {
           navigate("/login");
         } else if (res.status !== 0) {
           setFeedback([]);
-          setFeedbackError((res.data as ApiError).error ?? "Failed to load feedback");
+          setFeedbackError(
+            (res.data as ApiError).error ?? "Failed to load feedback"
+          );
         }
       })
       .catch((err) => {
-        if (err.name !== "AbortError") setFeedbackError("Failed to load feedback");
+        if (err.name !== "AbortError")
+          setFeedbackError("Failed to load feedback");
       })
       .finally(() => {
+        window.cancelAnimationFrame(startFrame);
         if (!signal.aborted) setFeedbackLoading(false);
       });
 
-    return () => controller.abort();
+    return () => {
+      window.cancelAnimationFrame(startFrame);
+      controller.abort();
+    };
   }, [feedbackHubId, feedbackDateFrom, feedbackDateTo, navigate]);
 
   const metrics = useMemo(() => {
@@ -115,11 +127,17 @@ export default function DeveloperPage() {
     const totalComments = posts.reduce((sum, p) => sum + p.comment_count, 0);
     const avgInteractions =
       totalPosts > 0
-        ? ((totalUpvotes + totalDownvotes + totalComments) / totalPosts).toFixed(1)
+        ? (
+            (totalUpvotes + totalDownvotes + totalComments) /
+            totalPosts
+          ).toFixed(1)
         : "0.0";
     const topPost =
       posts.length > 0
-        ? posts.reduce((best, p) => (p.upvote_count > best.upvote_count ? p : best), posts[0])
+        ? posts.reduce(
+            (best, p) => (p.upvote_count > best.upvote_count ? p : best),
+            posts[0]
+          )
         : null;
     return {
       totalPosts,
@@ -140,28 +158,36 @@ export default function DeveloperPage() {
           <span className="eyebrow">Developer Hub</span>
           <h1 className="headline">Content Manager</h1>
           <p className="subhead">
-            Create and publish game updates, track engagement metrics, and manage
-            your content strategy.
+            Create and publish game updates, track engagement metrics, and
+            manage your content strategy.
           </p>
 
           <div className="dev-sidebar-stats">
             <div className="dev-stat-panel">
               <span className="dev-stat-panel-label">Total Posts</span>
               <p className="dev-stat-panel-value">{metrics.totalPosts} posts</p>
-              <span className="dev-stat-panel-sub">Published across all games</span>
+              <span className="dev-stat-panel-sub">
+                Published across all games
+              </span>
             </div>
 
             <div className="dev-stat-panel">
               <span className="dev-stat-panel-label">Avg Interactions</span>
-              <p className="dev-stat-panel-value">{metrics.avgInteractions} per post</p>
-              <span className="dev-stat-panel-sub">Average across all content</span>
+              <p className="dev-stat-panel-value">
+                {metrics.avgInteractions} per post
+              </p>
+              <span className="dev-stat-panel-sub">
+                Average across all content
+              </span>
             </div>
 
             {metrics.topPost && (
               <div className="dev-stat-panel">
                 <span className="dev-stat-panel-label">Top Post</span>
                 <p className="dev-stat-panel-value">{metrics.topPost.title}</p>
-                <span className="dev-stat-panel-sub">Leading with most upvotes</span>
+                <span className="dev-stat-panel-sub">
+                  Leading with most upvotes
+                </span>
               </div>
             )}
           </div>
@@ -183,7 +209,18 @@ export default function DeveloperPage() {
                 <article className="dev-metric-card">
                   <span className="dev-metric-label">Total Posts</span>
                   <p className="dev-metric-value">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="dev-metric-icon">
+                    <svg
+                      width="28"
+                      height="28"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="dev-metric-icon"
+                    >
                       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                       <polyline points="14 2 14 8 20 8" />
                       <line x1="16" y1="13" x2="8" y2="13" />
@@ -196,7 +233,18 @@ export default function DeveloperPage() {
                 <article className="dev-metric-card">
                   <span className="dev-metric-label">Upvotes</span>
                   <p className="dev-metric-value">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="dev-metric-icon">
+                    <svg
+                      width="28"
+                      height="28"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="dev-metric-icon"
+                    >
                       <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
                       <polyline points="17 6 23 6 23 12" />
                     </svg>
@@ -206,7 +254,18 @@ export default function DeveloperPage() {
                 <article className="dev-metric-card">
                   <span className="dev-metric-label">Downvotes</span>
                   <p className="dev-metric-value">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="dev-metric-icon">
+                    <svg
+                      width="28"
+                      height="28"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="dev-metric-icon"
+                    >
                       <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
                       <polyline points="17 18 23 18 23 12" />
                     </svg>
@@ -216,7 +275,18 @@ export default function DeveloperPage() {
                 <article className="dev-metric-card">
                   <span className="dev-metric-label">Comments</span>
                   <p className="dev-metric-value">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="dev-metric-icon">
+                    <svg
+                      width="28"
+                      height="28"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="dev-metric-icon"
+                    >
                       <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
                     </svg>
                     {formatMetric(metrics.totalComments)}
@@ -226,7 +296,8 @@ export default function DeveloperPage() {
 
               <div className="meta-row">
                 <p className="helper">
-                  {metrics.publishedCount} published · {metrics.draftCount} drafts
+                  {metrics.publishedCount} published · {metrics.draftCount}{" "}
+                  drafts
                 </p>
                 <Link className="btn primary" to="/posts/create">
                   New Post
@@ -248,7 +319,9 @@ export default function DeveloperPage() {
                         <div className="dev-post-info">
                           <h3 className="dev-post-title">{post.title}</h3>
                           <div className="dev-post-meta">
-                            <span className="post-hub">{post.game_hub.name}</span>
+                            <span className="post-hub">
+                              {post.game_hub.name}
+                            </span>
                             <span>Updated {formatDate(post.updated_at)}</span>
                           </div>
                         </div>
@@ -348,7 +421,9 @@ export default function DeveloperPage() {
                 onChange={(e) => setFeedbackDateTo(e.target.value)}
               />
             </div>
-            {(feedbackDateFrom || feedbackDateTo || feedbackHubId !== "all") && (
+            {(feedbackDateFrom ||
+              feedbackDateTo ||
+              feedbackHubId !== "all") && (
               <button
                 className="btn ghost"
                 type="button"
@@ -373,14 +448,16 @@ export default function DeveloperPage() {
             <div className="feed-empty-state">
               <h3 className="empty-title">No Hubs Assigned</h3>
               <p className="helper">
-                You aren't listed as a developer on any game hubs yet. Contact an admin to be added.
+                You aren't listed as a developer on any game hubs yet. Contact
+                an admin to be added.
               </p>
             </div>
           ) : feedback.length === 0 ? (
             <div className="feed-empty-state">
               <h3 className="empty-title">No Feedback Yet</h3>
               <p className="helper">
-                Feedback from players will appear here once they submit it from a game hub page.
+                Feedback from players will appear here once they submit it from
+                a game hub page.
               </p>
             </div>
           ) : (

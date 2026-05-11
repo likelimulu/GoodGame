@@ -7,6 +7,10 @@ import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/useAuth";
 
+function isAbortError(err: unknown) {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
 export default function CreatePostPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -17,53 +21,74 @@ export default function CreatePostPage() {
   const [selectedHubId, setSelectedHubId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const requestedHubId = useMemo(() => searchParams.get("hub") ?? "", [searchParams]);
+  const requestedHubId = useMemo(
+    () => searchParams.get("hub") ?? "",
+    [searchParams]
+  );
 
-  const hubsEndpoint = user?.role === "developer" ? "/developer/gamehubs" : "/gamehubs";
+  const hubsEndpoint =
+    user?.role === "developer" ? "/developer/gamehubs" : "/gamehubs";
 
   useEffect(() => {
     const controller = new AbortController();
-    api.get<GameHub[]>(hubsEndpoint, controller.signal).then(({ status, data }) => {
-      if (status !== 200 || !Array.isArray(data)) return;
-      setGameHubs(data);
-      if (data.length === 0) return;
+    api
+      .get<GameHub[]>(hubsEndpoint, controller.signal)
+      .then(({ status, data }) => {
+        if (status !== 200 || !Array.isArray(data)) return;
+        setGameHubs(data);
+        if (data.length === 0) return;
 
-      const requestedHubExists = data.some((hub) => String(hub.id) === requestedHubId);
-      if (requestedHubExists) {
-        setSelectedHubId(requestedHubId);
-        return;
-      }
+        const requestedHubExists = data.some(
+          (hub) => String(hub.id) === requestedHubId
+        );
+        if (requestedHubExists) {
+          setSelectedHubId(requestedHubId);
+          return;
+        }
 
-      setSelectedHubId(String(data[0].id));
-    });
+        setSelectedHubId(String(data[0].id));
+      })
+      .catch((err: unknown) => {
+        if (isAbortError(err)) return;
+        setError("Failed to load game hubs");
+      });
     return () => controller.abort();
   }, [requestedHubId, hubsEndpoint]);
 
   async function handleSubmit(
     e: { preventDefault(): void; currentTarget: HTMLFormElement },
-    status: PostStatus,
+    status: PostStatus
   ) {
     e.preventDefault();
     const form = e.currentTarget;
-    const gameHubId = parseInt((form.elements.namedItem("game_hub_id") as HTMLSelectElement).value);
+    const gameHubId = parseInt(
+      (form.elements.namedItem("game_hub_id") as HTMLSelectElement).value
+    );
     const title = (form.elements.namedItem("title") as HTMLInputElement).value;
     const body = (form.elements.namedItem("body") as HTMLTextAreaElement).value;
     const tagsRaw = (form.elements.namedItem("tags") as HTMLInputElement).value;
     const tags = tagsRaw ? tagsRaw.split(",").filter(Boolean) : [];
-    const isQuestion = (form.elements.namedItem("is_question") as HTMLInputElement).checked;
-    const hasSpoilers = (form.elements.namedItem("contains_spoilers") as HTMLInputElement).checked;
+    const isQuestion = (
+      form.elements.namedItem("is_question") as HTMLInputElement
+    ).checked;
+    const hasSpoilers = (
+      form.elements.namedItem("contains_spoilers") as HTMLInputElement
+    ).checked;
 
     setError(null);
     setSubmitting(true);
-    const { status: resStatus, data } = await api.post<Post | ApiError>("/posts", {
-      game_hub_id: gameHubId,
-      title,
-      body,
-      tags,
-      is_question: isQuestion,
-      has_spoilers: hasSpoilers,
-      status,
-    });
+    const { status: resStatus, data } = await api.post<Post | ApiError>(
+      "/posts",
+      {
+        game_hub_id: gameHubId,
+        title,
+        body,
+        tags,
+        is_question: isQuestion,
+        has_spoilers: hasSpoilers,
+        status,
+      }
+    );
     setSubmitting(false);
 
     if (resStatus === 201) {
@@ -97,7 +122,8 @@ export default function CreatePostPage() {
           <form
             className="form-fields"
             onSubmit={(e) => {
-              const btn = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+              const btn = (e.nativeEvent as SubmitEvent)
+                .submitter as HTMLButtonElement | null;
               handleSubmit(e, (btn?.value ?? "published") as PostStatus);
             }}
           >

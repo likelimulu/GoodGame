@@ -355,7 +355,7 @@ class ModeratorRequestOut(Schema):
 
 
 class DeveloperFeedbackIn(Schema):
-    message: str = Field(..., min_length=1, max_length=2000)
+    message: str = Field(...)
 
 
 class DeveloperFeedbackOut(Schema):

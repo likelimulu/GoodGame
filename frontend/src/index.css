@@ -439,7 +439,8 @@
 
   .nav-avatar-wrapper.nav-avatar-wrapper--open .nav-avatar-tooltip,
   .nav-avatar-wrapper.nav-avatar-wrapper--open:hover .nav-avatar-tooltip,
-  .nav-avatar-wrapper.nav-avatar-wrapper--open:focus-within .nav-avatar-tooltip {
+  .nav-avatar-wrapper.nav-avatar-wrapper--open:focus-within
+    .nav-avatar-tooltip {
     opacity: 0;
     transform: translateY(4px);
     visibility: hidden;
@@ -1252,6 +1253,22 @@
     gap: 10px;
     padding: 16px;
     border-radius: 20px;
+    color: var(--color-gg-ink);
+    text-decoration: none;
+    transition:
+      transform 120ms ease,
+      border-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .search-result-card:hover,
+  .search-result-card:focus-visible {
+    transform: translateY(-1px);
+    border-color: var(--color-gg-red);
+    box-shadow:
+      0 10px 0 rgba(54, 66, 76, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    outline: none;
   }
 
   .search-result-title {
@@ -1280,6 +1297,10 @@
     font-size: 18px;
     font-weight: 700;
     line-height: 1.1;
+  }
+
+  .search-result-open {
+    color: var(--color-gg-blue-deep);
   }
 
   .search-chip-list {
@@ -2126,7 +2147,11 @@
     padding: 12px 20px;
     border: 3px solid #c98d15;
     border-radius: 18px;
-    background: linear-gradient(135deg, rgba(255, 208, 74, 0.15), rgba(255, 208, 74, 0.06));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 208, 74, 0.15),
+      rgba(255, 208, 74, 0.06)
+    );
     text-align: center;
   }
 

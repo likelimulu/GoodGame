@@ -633,11 +633,15 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                           <button
                             className="action-link text-link"
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
+                              if (!user) {
+                                navigate("/login");
+                                return;
+                              }
                               setOpenReportPostId((current) =>
                                 current === post.id ? null : post.id,
-                              )
-                            }
+                              );
+                            }}
                           >
                             {openReportPostId === post.id ? "Hide report form" : "Report post"}
                           </button>

@@ -99,9 +99,15 @@ export default function LoginPage() {
                 />
                 <span>Keep me signed in on this device</span>
               </label>
-              <a className="text-link" href="#">
+              <button
+                className="action-link text-link"
+                type="button"
+                onClick={() =>
+                  addToast("Password reset is not enabled yet.", "info")
+                }
+              >
                 Forgot password?
-              </a>
+              </button>
             </div>
 
             <div className="action-row">
