@@ -1058,10 +1058,6 @@ def submit_feedback(request, game_hub_id: int, data: DeveloperFeedbackIn):
     message = data.message.strip()
     if not message:
         return 400, {"error": "Message is required"}
-    if len(message) > DeveloperFeedback.MAX_MESSAGE_LENGTH:
-        return 400, {
-            "error": f"Message cannot exceed {DeveloperFeedback.MAX_MESSAGE_LENGTH} characters"
-        }
 
     if game_hub.developers.filter(id=request.user.id).exists():
         return 403, {"error": "You cannot submit feedback to a hub you develop"}
