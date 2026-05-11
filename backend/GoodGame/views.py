@@ -544,7 +544,10 @@ def _attach_comment_file_fields(comments, request):
     comments = list(comments)
     for comment in comments:
         comment.attachment_name = (
-            comment.attachment.name.rsplit("/", 1)[-1] if comment.attachment else None
+            comment.attachment_original_name
+            or comment.attachment.name.rsplit("/", 1)[-1]
+            if comment.attachment
+            else None
         )
         comment.attachment_url = _absolute_file_url(request, comment.attachment)
     return comments
@@ -880,6 +883,7 @@ def create_post_comment(
             comment.delete()
             return 400, {"error": error}
         safe_name = get_valid_filename(attachment.name)
+        comment.attachment_original_name = safe_name
         comment.attachment.save(safe_name, attachment, save=True)
 
     _attach_comment_file_fields([comment], request)
