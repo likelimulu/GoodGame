@@ -8,6 +8,10 @@ import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/useAuth";
 
+function isAbortError(err: unknown) {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
 export default function EditPostPage() {
   const { postId } = useParams<{ postId: string }>();
   const navigate = useNavigate();
@@ -19,54 +23,74 @@ export default function EditPostPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const hubsEndpoint = user?.role === "developer" ? "/developer/gamehubs" : "/gamehubs";
+  const hubsEndpoint =
+    user?.role === "developer" ? "/developer/gamehubs" : "/gamehubs";
 
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
 
-    api.get<GameHub[]>(hubsEndpoint, signal).then(({ status, data }) => {
-      if (status === 200 && Array.isArray(data)) setGameHubs(data);
-    });
+    api
+      .get<GameHub[]>(hubsEndpoint, signal)
+      .then(({ status, data }) => {
+        if (status === 200 && Array.isArray(data)) setGameHubs(data);
+      })
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setSubmitError("Failed to load game hubs");
+      });
 
     if (postId) {
-      api.get<Post | ApiError>(`/posts/${postId}`, signal).then(({ status, data }) => {
-        if (status === 200) {
-          setPost(data as Post);
-        } else {
-          navigate(`/error/${status || 404}`, { replace: true });
-        }
-      });
+      api
+        .get<Post | ApiError>(`/posts/${postId}`, signal)
+        .then(({ status, data }) => {
+          if (status === 200) {
+            setPost(data as Post);
+          } else {
+            navigate(`/error/${status || 404}`, { replace: true });
+          }
+        })
+        .catch((err: unknown) => {
+          if (!isAbortError(err)) navigate("/error/404", { replace: true });
+        });
     }
 
     return () => controller.abort();
-  }, [postId, hubsEndpoint]);
+  }, [postId, hubsEndpoint, navigate]);
 
   async function handleSubmit(
     e: { preventDefault(): void; currentTarget: HTMLFormElement },
-    status: PostStatus,
+    status: PostStatus
   ) {
     e.preventDefault();
     const form = e.currentTarget;
-    const gameHubId = parseInt((form.elements.namedItem("game_hub_id") as HTMLSelectElement).value);
+    const gameHubId = parseInt(
+      (form.elements.namedItem("game_hub_id") as HTMLSelectElement).value
+    );
     const title = (form.elements.namedItem("title") as HTMLInputElement).value;
     const body = (form.elements.namedItem("body") as HTMLTextAreaElement).value;
     const tagsRaw = (form.elements.namedItem("tags") as HTMLInputElement).value;
     const tags = tagsRaw ? tagsRaw.split(",").filter(Boolean) : [];
-    const isQuestion = (form.elements.namedItem("is_question") as HTMLInputElement).checked;
-    const hasSpoilers = (form.elements.namedItem("contains_spoilers") as HTMLInputElement).checked;
+    const isQuestion = (
+      form.elements.namedItem("is_question") as HTMLInputElement
+    ).checked;
+    const hasSpoilers = (
+      form.elements.namedItem("contains_spoilers") as HTMLInputElement
+    ).checked;
 
     setSubmitError(null);
     setSubmitting(true);
-    const { status: resStatus, data } = await api.put<Post | ApiError>(`/posts/${postId}`, {
-      game_hub_id: gameHubId,
-      title,
-      body,
-      tags,
-      is_question: isQuestion,
-      has_spoilers: hasSpoilers,
-      status,
-    });
+    const { status: resStatus, data } = await api.put<Post | ApiError>(
+      `/posts/${postId}`,
+      {
+        game_hub_id: gameHubId,
+        title,
+        body,
+        tags,
+        is_question: isQuestion,
+        has_spoilers: hasSpoilers,
+        status,
+      }
+    );
     setSubmitting(false);
 
     if (resStatus === 200) {
@@ -109,7 +133,8 @@ export default function EditPostPage() {
           <span className="eyebrow">Arcade Garage</span>
           <h1 className="headline">Edit Post</h1>
           <p className="subhead">
-            Update an existing thread with the same clean form used for creation.
+            Update an existing thread with the same clean form used for
+            creation.
           </p>
         </section>
 
@@ -117,13 +142,15 @@ export default function EditPostPage() {
           <p className="panel-tag">Post Studio</p>
           <h2 className="section-title">Edit Existing Post</h2>
           <p className="helper">
-            The form is prefilled so you can update and republish or save a draft.
+            The form is prefilled so you can update and republish or save a
+            draft.
           </p>
 
           <form
             className="form-fields"
             onSubmit={(e) => {
-              const btn = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+              const btn = (e.nativeEvent as SubmitEvent)
+                .submitter as HTMLButtonElement | null;
               handleSubmit(e, (btn?.value ?? "published") as PostStatus);
             }}
           >
@@ -224,7 +251,11 @@ export default function EditPostPage() {
                   Discard
                 </button>
               </div>
-              <button className="danger-link" type="button" onClick={handleDelete}>
+              <button
+                className="danger-link"
+                type="button"
+                onClick={handleDelete}
+              >
                 Delete Post
               </button>
             </div>

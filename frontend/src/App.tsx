@@ -8,6 +8,7 @@ import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import CreatePostPage from "./pages/CreatePostPage";
 import EditPostPage from "./pages/EditPostPage";
+import PostDetailPage from "./pages/PostDetailPage";
 import PostsFeedPage from "./pages/PostsFeedPage";
 import AdminModeratorRequestsPage from "./pages/AdminModeratorRequestsPage";
 import ModeratorWorkspacePage from "./pages/ModeratorWorkspacePage";
@@ -96,6 +97,7 @@ function App() {
                   </RequireAuth>
                 }
               />
+              <Route path="/posts/:postId" element={<PostDetailPage />} />
               <Route
                 path="/admin/moderator-requests"
                 element={
