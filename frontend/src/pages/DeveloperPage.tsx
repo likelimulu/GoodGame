@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
+import SearchableHubSelect from "../components/SearchableHubSelect";
 import Spinner from "../components/Spinner";
 import { api } from "../api/client";
 import type { ApiError, DeveloperFeedback, GameHub, Post } from "../api/types";
@@ -36,6 +37,11 @@ export default function DeveloperPage() {
   const [feedbackHubId, setFeedbackHubId] = useState("all");
   const [feedbackDateFrom, setFeedbackDateFrom] = useState("");
   const [feedbackDateTo, setFeedbackDateTo] = useState("");
+  const developerHubOptions = developerHubs.map((hub) => ({
+    value: String(hub.id),
+    label: hub.name,
+    keywords: [hub.slug],
+  }));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -85,13 +91,7 @@ export default function DeveloperPage() {
     const query = params.toString();
     const path = query ? `/developer/feedback?${query}` : "/developer/feedback";
 
-    const startFrame = window.requestAnimationFrame(() => {
-      setFeedbackLoading(true);
-      setFeedbackError(null);
-    });
-
-    api
-      .get<DeveloperFeedback[] | ApiError>(path, signal)
+    api.get<DeveloperFeedback[] | ApiError>(path, signal)
       .then((res) => {
         if (signal.aborted) return;
         if (res.status === 200 && Array.isArray(res.data)) {
@@ -110,14 +110,10 @@ export default function DeveloperPage() {
           setFeedbackError("Failed to load feedback");
       })
       .finally(() => {
-        window.cancelAnimationFrame(startFrame);
         if (!signal.aborted) setFeedbackLoading(false);
       });
 
-    return () => {
-      window.cancelAnimationFrame(startFrame);
-      controller.abort();
-    };
+    return () => controller.abort();
   }, [feedbackHubId, feedbackDateFrom, feedbackDateTo, navigate]);
 
   const metrics = useMemo(() => {
@@ -389,19 +385,20 @@ export default function DeveloperPage() {
           <div className="feedback-filters">
             <div className="field">
               <label htmlFor="feedback-hub-filter">Game Hub</label>
-              <select
+              <SearchableHubSelect
                 id="feedback-hub-filter"
                 value={feedbackHubId}
-                onChange={(e) => setFeedbackHubId(e.target.value)}
+                options={developerHubOptions}
+                clearValue="all"
+                clearLabel="Show All Hubs"
+                promptLabel="Type to filter your forums."
+                onChange={(nextValue) => {
+                  setFeedbackLoading(true);
+                  setFeedbackError(null);
+                  setFeedbackHubId(nextValue);
+                }}
                 disabled={developerHubs.length === 0}
-              >
-                <option value="all">All Hubs</option>
-                {developerHubs.map((hub) => (
-                  <option key={hub.id} value={hub.id}>
-                    {hub.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div className="field">
               <label htmlFor="feedback-date-from">From</label>
@@ -409,7 +406,11 @@ export default function DeveloperPage() {
                 id="feedback-date-from"
                 type="date"
                 value={feedbackDateFrom}
-                onChange={(e) => setFeedbackDateFrom(e.target.value)}
+                onChange={(e) => {
+                  setFeedbackLoading(true);
+                  setFeedbackError(null);
+                  setFeedbackDateFrom(e.target.value);
+                }}
               />
             </div>
             <div className="field">
@@ -418,7 +419,11 @@ export default function DeveloperPage() {
                 id="feedback-date-to"
                 type="date"
                 value={feedbackDateTo}
-                onChange={(e) => setFeedbackDateTo(e.target.value)}
+                onChange={(e) => {
+                  setFeedbackLoading(true);
+                  setFeedbackError(null);
+                  setFeedbackDateTo(e.target.value);
+                }}
               />
             </div>
             {(feedbackDateFrom ||
@@ -428,6 +433,8 @@ export default function DeveloperPage() {
                 className="btn ghost"
                 type="button"
                 onClick={() => {
+                  setFeedbackLoading(true);
+                  setFeedbackError(null);
                   setFeedbackHubId("all");
                   setFeedbackDateFrom("");
                   setFeedbackDateTo("");
