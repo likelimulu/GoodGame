@@ -7,6 +7,8 @@ import type { ApiMessage, ApiError, Notification } from "../api/types";
 const NOTIFICATION_LABELS = {
   moderation_warning: "Warning",
   post_removed: "Post Removed",
+  comment_warning: "Comment Warning",
+  comment_removed: "Comment Removed",
 } as const;
 
 function formatNotificationDate(value: string) {

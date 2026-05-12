@@ -1,11 +1,18 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import type { ApiError, Post, PostComment } from "../api/types";
+import type {
+  ApiError,
+  CommentModerationReport,
+  Post,
+  PostComment,
+} from "../api/types";
+import { useToast } from "../context/ToastContext";
 
 interface PostCommentsProps {
   post: Post;
   canComment: boolean;
+  currentUserId?: number | null;
   expandedByDefault?: boolean;
   onCommentCreated?: () => void;
 }
@@ -13,10 +20,12 @@ interface PostCommentsProps {
 export default function PostComments({
   post,
   canComment,
+  currentUserId = null,
   expandedByDefault = false,
   onCommentCreated,
 }: PostCommentsProps) {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [isOpen, setIsOpen] = useState(expandedByDefault);
   const [comments, setComments] = useState<PostComment[]>([]);
   const [commentCount, setCommentCount] = useState(post.comment_count);
@@ -25,6 +34,9 @@ export default function PostComments({
   const [hasLoaded, setHasLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [reportingCommentId, setReportingCommentId] = useState<number | null>(null);
+  const [openReportCommentId, setOpenReportCommentId] = useState<number | null>(null);
+  const [reportReasons, setReportReasons] = useState<Record<number, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -112,6 +124,50 @@ export default function PostComments({
     setSubmitError((data as ApiError).error ?? "Failed to post comment");
   }
 
+  async function handleReport(comment: PostComment) {
+    if (!canComment) {
+      navigate("/login");
+      return;
+    }
+
+    const reason = reportReasons[comment.id]?.trim() ?? "";
+    if (!reason) {
+      const message = "Report reason is required";
+      setLoadError(message);
+      addToast(message, "error");
+      return;
+    }
+
+    setReportingCommentId(comment.id);
+    setLoadError(null);
+
+    const { status, data } = await api.post<CommentModerationReport | ApiError>(
+      `/comments/${comment.id}/reports`,
+      { reason },
+    );
+    setReportingCommentId(null);
+
+    if (status === 201) {
+      setOpenReportCommentId(null);
+      setReportReasons((current) => {
+        const next = { ...current };
+        delete next[comment.id];
+        return next;
+      });
+      addToast("Comment reported for moderator review", "success");
+      return;
+    }
+
+    if (status === 401) {
+      navigate("/login");
+      return;
+    }
+
+    const message = (data as ApiError).error ?? "Failed to submit report";
+    setLoadError(message);
+    addToast(message, "error");
+  }
+
   return (
     <section className="comment-panel">
       <div className="comment-header">
@@ -135,9 +191,24 @@ export default function PostComments({
             <div className="comment-list">
               {comments.map((comment) => (
                 <article className="comment-card" key={comment.id}>
-                  <div className="comment-meta">
-                    <span>{comment.author.username}</span>
-                    <span>{new Date(comment.created_at).toLocaleString()}</span>
+                  <div className="comment-card-head">
+                    <div className="comment-meta">
+                      <span>{comment.author.username}</span>
+                      <span>{new Date(comment.created_at).toLocaleString()}</span>
+                    </div>
+                    {currentUserId !== comment.author.id && (
+                      <button
+                        className="action-link text-link"
+                        type="button"
+                        onClick={() =>
+                          setOpenReportCommentId((current) =>
+                            current === comment.id ? null : comment.id,
+                          )
+                        }
+                      >
+                        {openReportCommentId === comment.id ? "Cancel Report" : "Report"}
+                      </button>
+                    )}
                   </div>
                   <p className="comment-copy">{comment.body}</p>
                   {comment.attachment_url && (
@@ -150,6 +221,47 @@ export default function PostComments({
                       Open {comment.attachment_name ?? "attachment"}
                     </a>
                   )}
+                  {openReportCommentId === comment.id ? (
+                    <div className="report-panel comment-report-panel">
+                      <h4 className="report-title">Report Comment</h4>
+                      <p className="helper">
+                        Explain why this comment needs moderator attention.
+                      </p>
+                      <div className="field">
+                        <label htmlFor={`comment-report-reason-${comment.id}`}>Report Reason</label>
+                        <textarea
+                          id={`comment-report-reason-${comment.id}`}
+                          rows={3}
+                          value={reportReasons[comment.id] ?? ""}
+                          onChange={(event) =>
+                            setReportReasons((current) => ({
+                              ...current,
+                              [comment.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="Spam, harassment, spoilers without warning, or another issue"
+                        />
+                      </div>
+                      <div className="report-actions">
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          disabled={reportingCommentId === comment.id}
+                          onClick={() => handleReport(comment)}
+                        >
+                          {reportingCommentId === comment.id ? "Submitting…" : "Submit Report"}
+                        </button>
+                        <button
+                          className="btn ghost"
+                          type="button"
+                          disabled={reportingCommentId === comment.id}
+                          onClick={() => setOpenReportCommentId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>

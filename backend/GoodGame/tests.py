@@ -8,6 +8,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from .models import (
+    CommentModerationAction,
+    CommentModerationReport,
     DeveloperFeedback,
     EmailVerificationToken,
     HIGH_REPUTATION_THRESHOLD,
@@ -1340,6 +1342,20 @@ class PostCommentApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()[0]["comment_count"], 2)
 
+    def test_posts_include_comment_count_excludes_deleted_comments(self):
+        PostComment.objects.create(post=self.post, author=self.commenter, body="Visible")
+        PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="Removed",
+            status=PostComment.Status.DELETED,
+        )
+
+        response = self.client.get("/api/posts")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["comment_count"], 1)
+
     def test_cannot_comment_on_draft_post(self):
         draft_post = Post.objects.create(
             game_hub=self.hub,
@@ -1356,6 +1372,88 @@ class PostCommentApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_list_comments_hides_deleted_comments(self):
+        PostComment.objects.create(post=self.post, author=self.commenter, body="Visible")
+        PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="Removed",
+            status=PostComment.Status.DELETED,
+        )
+
+        response = self.client.get(f"/api/posts/{self.post.id}/comments")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]["body"], "Visible")
+
+    def test_authenticated_user_can_report_comment(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="Try frost affinity here.",
+        )
+        self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"username": "commenter", "password": "pass-456"}),
+            content_type="application/json",
+        )
+
+        response = self.client.post(
+            f"/api/comments/{comment.id}/reports",
+            data=json.dumps({"reason": "Off-topic and aggressive"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["status"], CommentModerationReport.Status.OPEN)
+        self.assertEqual(response.json()["reporter"]["username"], "commenter")
+        self.assertTrue(
+            CommentModerationReport.objects.filter(comment=comment, reporter=self.commenter).exists()
+        )
+
+    def test_user_cannot_report_own_comment(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.commenter,
+            body="My own comment.",
+        )
+        self._login()
+
+        response = self.client.post(
+            f"/api/comments/{comment.id}/reports",
+            data=json.dumps({"reason": "Trying to self-report"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "You cannot report your own comment")
+
+    def test_duplicate_active_comment_report_is_rejected(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="Maybe too heated.",
+        )
+        CommentModerationReport.objects.create(
+            comment=comment,
+            reporter=self.commenter,
+            reason="Already flagged",
+        )
+        self._login()
+
+        response = self.client.post(
+            f"/api/comments/{comment.id}/reports",
+            data=json.dumps({"reason": "Still a problem"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json()["error"],
+            "You already have an active report for this comment",
+        )
 
 
     def test_list_comments_on_deleted_post_returns_404(self):
@@ -1380,6 +1478,23 @@ class PostCommentApiTests(TestCase):
             f"/api/posts/{deleted_post.id}/comments",
             data={"body": "Still here?"},
         )
+        self.assertEqual(response.status_code, 404)
+
+    def test_cannot_report_deleted_comment(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="No longer visible",
+            status=PostComment.Status.DELETED,
+        )
+        self._login()
+
+        response = self.client.post(
+            f"/api/comments/{comment.id}/reports",
+            data=json.dumps({"reason": "Trying to flag a removed comment"}),
+            content_type="application/json",
+        )
+
         self.assertEqual(response.status_code, 404)
 
 
@@ -1512,6 +1627,64 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(response.json()[0]["report_count"], 1)
         self.assertEqual(response.json()[0]["report_status"], PostModerationReport.Status.OPEN)
         self.assertEqual(response.json()[0]["latest_report_reason"], "Missing spoiler warning")
+
+    def test_moderator_queue_includes_reported_comments(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="Backseat comment that got reported.",
+        )
+        CommentModerationReport.objects.create(
+            comment=comment,
+            reporter=self.reporter,
+            reason="Harassment",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.get("/api/moderation/queue")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        item = response.json()[0]
+        self.assertEqual(item["id"], comment.id)
+        self.assertEqual(item["target_type"], "comment")
+        self.assertEqual(item["parent_post_id"], self.post.id)
+        self.assertEqual(item["parent_post_title"], self.post.title)
+        self.assertEqual(item["report_status"], CommentModerationReport.Status.OPEN)
+        self.assertEqual(item["latest_report_reason"], "Harassment")
+
+    def test_moderator_can_resolve_reported_comment_after_parent_post_is_deleted(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="Comment on a post that gets deleted later.",
+        )
+        CommentModerationReport.objects.create(
+            comment=comment,
+            reporter=self.reporter,
+            reason="Harassment",
+        )
+        self.post.status = Post.Status.DELETED
+        self.post.save(update_fields=["status", "updated_at"])
+        self._login("moderator", "mod-pass-123")
+
+        queue_response = self.client.get("/api/moderation/queue")
+        self.assertEqual(queue_response.status_code, 200)
+        self.assertEqual(len(queue_response.json()), 1)
+        self.assertEqual(queue_response.json()[0]["id"], comment.id)
+        self.assertEqual(queue_response.json()[0]["target_type"], "comment")
+
+        action_response = self.client.post(
+            f"/api/moderation/comments/{comment.id}/actions",
+            data=json.dumps({"action": "dismiss", "note": "Handled after parent post deletion"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(action_response.status_code, 200)
+        report = CommentModerationReport.objects.get(comment=comment, reporter=self.reporter)
+        self.assertEqual(report.status, CommentModerationReport.Status.DISMISSED)
+        self.assertEqual(action_response.json()["report_status"], CommentModerationReport.Status.DISMISSED)
+        self.assertEqual(action_response.json()["latest_action"], CommentModerationAction.Action.DISMISS)
 
     def test_queue_filters_return_current_status_buckets(self):
         statuses = [
@@ -1725,6 +1898,42 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(retry_response.status_code, 409)
         self.assertEqual(Notification.objects.filter(recipient=self.author).count(), 1)
 
+    def test_warn_comment_notifies_author_without_deleting(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="Needlessly hostile reply.",
+        )
+        CommentModerationReport.objects.create(
+            comment=comment,
+            reporter=self.reporter,
+            reason="Hostile tone",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/comments/{comment.id}/actions",
+            data=json.dumps({"action": "warn", "note": "Please stay constructive."}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        comment.refresh_from_db()
+        self.assertEqual(comment.status, PostComment.Status.PUBLISHED)
+        self.assertEqual(response.json()["target_type"], "comment")
+        self.assertEqual(response.json()["report_status"], CommentModerationReport.Status.ACTIONED)
+        self.assertEqual(response.json()["latest_action"], CommentModerationAction.Action.WARN)
+
+        report = CommentModerationReport.objects.get(comment=comment, reporter=self.reporter)
+        self.assertEqual(report.status, CommentModerationReport.Status.ACTIONED)
+
+        notification = Notification.objects.get(recipient=self.author)
+        self.assertEqual(notification.type, Notification.Type.COMMENT_WARNING)
+        self.assertEqual(notification.comment, comment)
+        self.assertEqual(notification.post, self.post)
+        self.assertEqual(notification.comment_moderation_action.action, CommentModerationAction.Action.WARN)
+        self.assertIn("Please stay constructive.", notification.message)
+
     def test_escalate_action_marks_reports_escalated(self):
         PostModerationReport.objects.create(
             post=self.post,
@@ -1774,6 +1983,50 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(notification.post, self.post)
         self.assertEqual(notification.post.status, Post.Status.DELETED)
         self.assertIn("Removed from public feed", notification.message)
+
+    def test_remove_comment_hides_it_from_public_thread_and_notifies_author(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="This comment should disappear after moderation.",
+        )
+        CommentModerationReport.objects.create(
+            comment=comment,
+            reporter=self.reporter,
+            reason="Spam link",
+        )
+        self._login("moderator", "mod-pass-123")
+
+        response = self.client.post(
+            f"/api/moderation/comments/{comment.id}/actions",
+            data=json.dumps({"action": "remove", "note": "Removed from the thread"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        comment.refresh_from_db()
+        self.assertEqual(comment.status, PostComment.Status.DELETED)
+        self.assertEqual(response.json()["target_type"], "comment")
+        self.assertEqual(response.json()["report_status"], CommentModerationReport.Status.ACTIONED)
+        self.assertEqual(response.json()["latest_action"], CommentModerationAction.Action.REMOVE)
+
+        report = CommentModerationReport.objects.get(comment=comment, reporter=self.reporter)
+        self.assertEqual(report.status, CommentModerationReport.Status.ACTIONED)
+
+        thread_response = self.client.get(f"/api/posts/{self.post.id}/comments")
+        self.assertEqual(thread_response.status_code, 200)
+        self.assertEqual(thread_response.json(), [])
+
+        post_list_response = self.client.get("/api/posts")
+        self.assertEqual(post_list_response.status_code, 200)
+        self.assertEqual(post_list_response.json()[0]["comment_count"], 0)
+
+        notification = Notification.objects.get(recipient=self.author)
+        self.assertEqual(notification.type, Notification.Type.COMMENT_REMOVED)
+        self.assertEqual(notification.comment, comment)
+        self.assertEqual(notification.post, self.post)
+        self.assertEqual(notification.comment_moderation_action.action, CommentModerationAction.Action.REMOVE)
+        self.assertIn("Removed from the thread", notification.message)
 
     def test_dismiss_action_clears_report_without_deleting_post(self):
         PostModerationReport.objects.create(
