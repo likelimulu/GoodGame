@@ -189,6 +189,7 @@ class PostComment(models.Model):
     )
     body = models.TextField()
     attachment = models.FileField(upload_to="comment_attachments/", blank=True)
+    attachment_original_name = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

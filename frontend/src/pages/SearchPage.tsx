@@ -35,7 +35,10 @@ function postPreview(post: Post) {
 export default function SearchPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const query = useMemo(() => searchParams.get("q")?.trim() ?? "", [searchParams]);
+  const query = useMemo(
+    () => searchParams.get("q")?.trim() ?? "",
+    [searchParams]
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -59,7 +62,10 @@ export default function SearchPage() {
     });
 
     api
-      .get<SearchResponse | ApiError>(`/search?${params.toString()}`, controller.signal)
+      .get<SearchResponse | ApiError>(
+        `/search?${params.toString()}`,
+        controller.signal
+      )
       .then(({ status, data }) => {
         if (status === 200) {
           setResults(data as SearchResponse);
@@ -87,13 +93,17 @@ export default function SearchPage() {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextQuery = searchInputRef.current?.value.trim() ?? "";
-    navigate(nextQuery ? `/search?q=${encodeURIComponent(nextQuery)}` : "/search");
+    navigate(
+      nextQuery ? `/search?q=${encodeURIComponent(nextQuery)}` : "/search"
+    );
   }
 
   const totalResults = resultCount(results);
   const showPrompt = query.length === 0;
-  const showShortQuery = query.length > 0 && query.length < MIN_SEARCH_QUERY_LENGTH;
-  const showEmpty = !loading && !error && results !== null && totalResults === 0;
+  const showShortQuery =
+    query.length > 0 && query.length < MIN_SEARCH_QUERY_LENGTH;
+  const showEmpty =
+    !loading && !error && results !== null && totalResults === 0;
 
   return (
     <Layout>
@@ -109,7 +119,9 @@ export default function SearchPage() {
         <section className="form-card feed-card">
           <p className="panel-tag">Search GoodGame</p>
           <h2 className="section-title">
-            {query.length >= MIN_SEARCH_QUERY_LENGTH ? query : "Search GoodGame"}
+            {query.length >= MIN_SEARCH_QUERY_LENGTH
+              ? query
+              : "Search GoodGame"}
           </h2>
           <p className="helper">
             {query.length >= MIN_SEARCH_QUERY_LENGTH
@@ -146,18 +158,23 @@ export default function SearchPage() {
             <div className="feed-empty-state">
               <h3 className="empty-title">Start A Search</h3>
               <p className="helper">
-                Search terms can match post titles, post bodies, hub names, tags, and author usernames.
+                Search terms can match post titles, post bodies, hub names,
+                tags, and author usernames.
               </p>
             </div>
           ) : showShortQuery ? (
             <div className="feed-empty-state">
               <h3 className="empty-title">Keep Typing</h3>
-              <p className="helper">Search terms need at least two characters.</p>
+              <p className="helper">
+                Search terms need at least two characters.
+              </p>
             </div>
           ) : showEmpty ? (
             <div className="feed-empty-state">
               <h3 className="empty-title">No Results</h3>
-              <p className="helper">Try a different post title, tag, game hub, or author.</p>
+              <p className="helper">
+                Try a different post title, tag, game hub, or author.
+              </p>
             </div>
           ) : results ? (
             <div className="search-results">
@@ -169,7 +186,11 @@ export default function SearchPage() {
                   </div>
                   <div className="search-result-list">
                     {results.posts.map((post) => (
-                      <article className="search-result-card" key={post.id}>
+                      <Link
+                        className="search-result-card"
+                        key={post.id}
+                        to={`/posts/${post.id}`}
+                      >
                         <div className="post-meta">
                           <span className="post-hub">{post.game_hub.name}</span>
                           <span>
@@ -202,10 +223,17 @@ export default function SearchPage() {
                         <div className="search-result-meta">
                           <span>{post.vote_score} score</span>
                           <span>{post.comment_count} comments</span>
-                          {post.is_question && <span className="pill pill-question">Question</span>}
-                          {post.has_spoilers && <span className="pill pill-warning">Spoilers</span>}
+                          {post.is_question && (
+                            <span className="pill pill-question">Question</span>
+                          )}
+                          {post.has_spoilers && (
+                            <span className="pill pill-warning">Spoilers</span>
+                          )}
+                          <span className="search-result-open">
+                            Open thread
+                          </span>
                         </div>
-                      </article>
+                      </Link>
                     ))}
                   </div>
                 </section>
@@ -215,7 +243,9 @@ export default function SearchPage() {
                 <section className="search-section">
                   <div className="search-section-head">
                     <h3 className="search-section-title">Game Hubs</h3>
-                    <span className="search-count">{results.game_hubs.length}</span>
+                    <span className="search-count">
+                      {results.game_hubs.length}
+                    </span>
                   </div>
                   <div className="search-chip-list">
                     {results.game_hubs.map((hub) => (
@@ -265,7 +295,9 @@ export default function SearchPage() {
                         key={user.id}
                         to={`/search?q=${encodeURIComponent(user.username)}`}
                       >
-                        <span className="search-user-name">{user.username}</span>
+                        <span className="search-user-name">
+                          {user.username}
+                        </span>
                         <span className="search-user-meta">
                           {user.reputation_score} reputation
                           {user.is_trusted ? " · Trusted" : ""}
