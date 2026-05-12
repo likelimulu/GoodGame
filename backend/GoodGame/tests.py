@@ -2357,14 +2357,15 @@ class DeveloperFeedbackApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "Message is required")
 
-    def test_submit_feedback_message_too_long_returns_422(self):
+    def test_submit_feedback_message_too_long_returns_400(self):
         self._login()
         response = self.client.post(
             f"/api/gamehubs/{self.hub.id}/feedback",
             data=json.dumps({"message": "x" * (DeveloperFeedback.MAX_MESSAGE_LENGTH + 1)}),
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cannot exceed", response.json()["error"])
 
     def test_feedback_cooldown_prevents_rapid_resubmit(self):
         self._login()
