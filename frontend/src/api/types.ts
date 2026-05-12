@@ -104,9 +104,11 @@ export interface ModeratorAccessRequest {
 
 export type ModerationReportStatus = "open" | "actioned" | "escalated" | "dismissed";
 export type ModerationActionType = "warn" | "remove" | "escalate" | "dismiss";
+export type ModerationQueueTargetType = "post" | "comment";
 
 export interface ModerationQueueItem {
   id: number;
+  target_type: ModerationQueueTargetType;
   game_hub: GameHub;
   author: PostAuthor;
   title: string;
@@ -124,9 +126,20 @@ export interface ModerationQueueItem {
   latest_action: ModerationActionType | null;
   latest_action_note: string | null;
   latest_action_at: string | null;
+  parent_post_id: number | null;
+  parent_post_title: string | null;
+  attachment_name: string | null;
+  attachment_url: string | null;
 }
 
 export interface PostModerationReport {
+  id: number;
+  reason: string;
+  status: string;
+  created_at: string;
+}
+
+export interface CommentModerationReport {
   id: number;
   reason: string;
   status: string;
@@ -141,7 +154,11 @@ export interface DeveloperFeedback {
   created_at: string;
 }
 
-export type NotificationType = "moderation_warning" | "post_removed";
+export type NotificationType =
+  | "moderation_warning"
+  | "post_removed"
+  | "comment_warning"
+  | "comment_removed";
 
 export interface Notification {
   id: number;
@@ -154,4 +171,5 @@ export interface Notification {
   post_id: number | null;
   post_title: string | null;
   post_status: PostStatus | null;
+  comment_id: number | null;
 }

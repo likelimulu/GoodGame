@@ -699,6 +699,7 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
                       <PostComments
                         post={post}
                         canComment={Boolean(user)}
+                        currentUserId={user?.id ?? null}
                         expandedByDefault={openCommentsByDefault}
                         onCommentCreated={() => handleCommentCreated(post.id)}
                       />

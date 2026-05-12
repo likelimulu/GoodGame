@@ -374,6 +374,7 @@ export default function PostDetailPage() {
                   <PostComments
                     post={post}
                     canComment={Boolean(user)}
+                    currentUserId={user?.id ?? null}
                     expandedByDefault
                     onCommentCreated={handleCommentCreated}
                   />
