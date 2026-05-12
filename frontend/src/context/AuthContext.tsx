@@ -32,6 +32,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshUser = useCallback(() => {
+    const controller = new AbortController();
+    api
+      .get<AuthUser | ApiError>("/auth/me", controller.signal)
+      .then(({ status, data }) => {
+        if (status === 200) setUser(data as AuthUser);
+      })
+      .catch(() => {});
+    return controller;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -49,6 +60,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && user) {
+        refreshUser();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [user, refreshUser]);
 
   const login = useCallback(
     async (username: string, password: string, rememberMe: boolean) => {
