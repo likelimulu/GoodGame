@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import PostComments from "../components/PostComments";
+import SearchableHubSelect from "../components/SearchableHubSelect";
 import VoteControls from "../components/VoteControls";
 import Spinner from "../components/Spinner";
 import { api } from "../api/client";
@@ -62,6 +63,11 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
   const [filterDateTo, setFilterDateTo] = useState("");
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const hubOptions = gameHubs.map((hub) => ({
+    value: String(hub.id),
+    label: hub.name,
+    keywords: [hub.slug],
+  }));
 
   const isTrusted = user?.is_trusted ?? false;
 
@@ -309,23 +315,20 @@ export default function PostsFeedPage({ mineOnly = false }: { mineOnly?: boolean
           <div className="feed-sidebar-stack">
             <div className="field">
               <label htmlFor="hub-filter">Game Hub</label>
-              <select
+              <SearchableHubSelect
                 id="hub-filter"
                 value={selectedHubId}
-                onChange={(e) => {
+                options={hubOptions}
+                clearValue="all"
+                clearLabel="Show All Hubs"
+                promptLabel="Type to filter forums."
+                onChange={(nextValue) => {
                   setLoading(true);
                   setError(null);
                   setFeedbackOpen(false);
-                  setSelectedHubId(e.target.value);
+                  setSelectedHubId(nextValue);
                 }}
-              >
-                <option value="all">All Hubs</option>
-                {gameHubs.map((hub) => (
-                  <option key={hub.id} value={hub.id}>
-                    {hub.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             {isTrusted && !mineOnly && (

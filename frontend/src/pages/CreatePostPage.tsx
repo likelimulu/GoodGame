@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import SearchableHubSelect from "../components/SearchableHubSelect";
 import TagEditor from "../components/TagEditor";
 import { api } from "../api/client";
 import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
@@ -21,9 +22,15 @@ export default function CreatePostPage() {
   const [selectedHubId, setSelectedHubId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const requestedHubId = useMemo(
-    () => searchParams.get("hub") ?? "",
-    [searchParams]
+  const requestedHubId = useMemo(() => searchParams.get("hub") ?? "", [searchParams]);
+  const hubOptions = useMemo(
+    () =>
+      gameHubs.map((hub) => ({
+        value: String(hub.id),
+        label: hub.name,
+        keywords: [hub.slug],
+      })),
+    [gameHubs],
   );
 
   const hubsEndpoint =
@@ -61,9 +68,7 @@ export default function CreatePostPage() {
   ) {
     e.preventDefault();
     const form = e.currentTarget;
-    const gameHubId = parseInt(
-      (form.elements.namedItem("game_hub_id") as HTMLSelectElement).value
-    );
+    const gameHubId = parseInt(selectedHubId, 10);
     const title = (form.elements.namedItem("title") as HTMLInputElement).value;
     const body = (form.elements.namedItem("body") as HTMLTextAreaElement).value;
     const tagsRaw = (form.elements.namedItem("tags") as HTMLInputElement).value;
@@ -74,6 +79,13 @@ export default function CreatePostPage() {
     const hasSpoilers = (
       form.elements.namedItem("contains_spoilers") as HTMLInputElement
     ).checked;
+
+    if (Number.isNaN(gameHubId)) {
+      const errMsg = "Select a forum before publishing.";
+      setError(errMsg);
+      addToast(errMsg, "error");
+      return;
+    }
 
     setError(null);
     setSubmitting(true);
@@ -131,19 +143,15 @@ export default function CreatePostPage() {
 
             <div className="field">
               <label htmlFor="post-create-forum">Forum</label>
-              <select
+              <SearchableHubSelect
                 id="post-create-forum"
                 name="game_hub_id"
-                required
                 value={selectedHubId}
-                onChange={(e) => setSelectedHubId(e.target.value)}
-              >
-                {gameHubs.map((hub) => (
-                  <option key={hub.id} value={hub.id}>
-                    {hub.name}
-                  </option>
-                ))}
-              </select>
+                options={hubOptions}
+                required
+                disabled={gameHubs.length === 0}
+                onChange={setSelectedHubId}
+              />
             </div>
 
             <div className="field">

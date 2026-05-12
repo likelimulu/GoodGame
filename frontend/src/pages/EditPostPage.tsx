@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import SearchableHubSelect from "../components/SearchableHubSelect";
 import TagEditor from "../components/TagEditor";
 import Spinner from "../components/Spinner";
 import { api } from "../api/client";
@@ -20,8 +21,14 @@ export default function EditPostPage() {
 
   const [post, setPost] = useState<Post | null>(null);
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
+  const [selectedHubId, setSelectedHubId] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const hubOptions = gameHubs.map((hub) => ({
+    value: String(hub.id),
+    label: hub.name,
+    keywords: [hub.slug],
+  }));
 
   const hubsEndpoint =
     user?.role === "developer" ? "/developer/gamehubs" : "/gamehubs";
@@ -40,22 +47,21 @@ export default function EditPostPage() {
       });
 
     if (postId) {
-      api
-        .get<Post | ApiError>(`/posts/${postId}`, signal)
-        .then(({ status, data }) => {
-          if (status === 200) {
-            setPost(data as Post);
-          } else {
-            navigate(`/error/${status || 404}`, { replace: true });
-          }
-        })
-        .catch((err: unknown) => {
-          if (!isAbortError(err)) navigate("/error/404", { replace: true });
-        });
+      api.get<Post | ApiError>(`/posts/${postId}`, signal).then(({ status, data }) => {
+        if (status === 200) {
+          const nextPost = data as Post;
+          setPost(nextPost);
+          setSelectedHubId(String(nextPost.game_hub.id));
+        } else {
+          navigate(`/error/${status || 404}`, { replace: true });
+        }
+      }).catch((err: unknown) => {
+        if (!isAbortError(err)) navigate("/error/404", { replace: true });
+      });
     }
 
     return () => controller.abort();
-  }, [postId, hubsEndpoint, navigate]);
+  }, [navigate, postId, hubsEndpoint]);
 
   async function handleSubmit(
     e: { preventDefault(): void; currentTarget: HTMLFormElement },
@@ -63,9 +69,7 @@ export default function EditPostPage() {
   ) {
     e.preventDefault();
     const form = e.currentTarget;
-    const gameHubId = parseInt(
-      (form.elements.namedItem("game_hub_id") as HTMLSelectElement).value
-    );
+    const gameHubId = parseInt(selectedHubId, 10);
     const title = (form.elements.namedItem("title") as HTMLInputElement).value;
     const body = (form.elements.namedItem("body") as HTMLTextAreaElement).value;
     const tagsRaw = (form.elements.namedItem("tags") as HTMLInputElement).value;
@@ -76,6 +80,13 @@ export default function EditPostPage() {
     const hasSpoilers = (
       form.elements.namedItem("contains_spoilers") as HTMLInputElement
     ).checked;
+
+    if (Number.isNaN(gameHubId)) {
+      const errMsg = "Select a forum before saving.";
+      setSubmitError(errMsg);
+      addToast(errMsg, "error");
+      return;
+    }
 
     setSubmitError(null);
     setSubmitting(true);
@@ -158,18 +169,14 @@ export default function EditPostPage() {
 
             <div className="field">
               <label htmlFor="post-edit-forum">Forum</label>
-              <select
+              <SearchableHubSelect
                 id="post-edit-forum"
                 name="game_hub_id"
-                key={post?.id}
-                defaultValue={post?.game_hub.id}
-              >
-                {gameHubs.map((hub) => (
-                  <option key={hub.id} value={hub.id}>
-                    {hub.name}
-                  </option>
-                ))}
-              </select>
+                value={selectedHubId}
+                options={hubOptions}
+                disabled={gameHubs.length === 0}
+                onChange={setSelectedHubId}
+              />
             </div>
 
             <div className="field">
