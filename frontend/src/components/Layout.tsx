@@ -244,7 +244,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
         </button>
         <nav ref={navRef} className={`nav${menuOpen ? "nav--open" : ""}`}>
-          <span>Game Hubs</span>
           <Link
             className={isFeed ? "active" : ""}
             to="/posts"
