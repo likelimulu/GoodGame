@@ -54,6 +54,11 @@ resource "azurerm_container_app" "django" {
     value = azurerm_container_registry.main.admin_password
   }
 
+  secret {
+    name  = "email-host-password"
+    value = var.email_host_password
+  }
+
   template {
     container {
       name   = "django-api"
@@ -105,6 +110,38 @@ resource "azurerm_container_app" "django" {
       env {
         name        = "AZURE_STORAGE_ACCOUNT_KEY"
         secret_name = "storage-account-key"
+      }
+      env {
+        name  = "EMAIL_BACKEND"
+        value = "django.core.mail.backends.smtp.EmailBackend"
+      }
+      env {
+        name  = "EMAIL_HOST"
+        value = var.email_host
+      }
+      env {
+        name  = "EMAIL_PORT"
+        value = tostring(var.email_port)
+      }
+      env {
+        name  = "EMAIL_HOST_USER"
+        value = var.email_host_user
+      }
+      env {
+        name        = "EMAIL_HOST_PASSWORD"
+        secret_name = "email-host-password"
+      }
+      env {
+        name  = "EMAIL_USE_TLS"
+        value = "True"
+      }
+      env {
+        name  = "DEFAULT_FROM_EMAIL"
+        value = var.default_from_email
+      }
+      env {
+        name  = "FRONTEND_URL"
+        value = var.frontend_url
       }
     }
 
