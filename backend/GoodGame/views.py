@@ -1249,7 +1249,7 @@ def moderate_comment(request, comment_id: int, data: PostModerationActionIn):
             PostComment.objects.select_related("post", "author").select_for_update(),
             id=comment_id,
         )
-        if comment.post.status != Post.Status.PUBLISHED:
+        if comment.post.status == Post.Status.DRAFT:
             return 404, {"error": "Comment not found"}
 
         active_reports = CommentModerationReport.objects.select_for_update().filter(

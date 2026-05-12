@@ -1653,6 +1653,39 @@ class PostModerationApiTests(TestCase):
         self.assertEqual(item["report_status"], CommentModerationReport.Status.OPEN)
         self.assertEqual(item["latest_report_reason"], "Harassment")
 
+    def test_moderator_can_resolve_reported_comment_after_parent_post_is_deleted(self):
+        comment = PostComment.objects.create(
+            post=self.post,
+            author=self.author,
+            body="Comment on a post that gets deleted later.",
+        )
+        CommentModerationReport.objects.create(
+            comment=comment,
+            reporter=self.reporter,
+            reason="Harassment",
+        )
+        self.post.status = Post.Status.DELETED
+        self.post.save(update_fields=["status", "updated_at"])
+        self._login("moderator", "mod-pass-123")
+
+        queue_response = self.client.get("/api/moderation/queue")
+        self.assertEqual(queue_response.status_code, 200)
+        self.assertEqual(len(queue_response.json()), 1)
+        self.assertEqual(queue_response.json()[0]["id"], comment.id)
+        self.assertEqual(queue_response.json()[0]["target_type"], "comment")
+
+        action_response = self.client.post(
+            f"/api/moderation/comments/{comment.id}/actions",
+            data=json.dumps({"action": "dismiss", "note": "Handled after parent post deletion"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(action_response.status_code, 200)
+        report = CommentModerationReport.objects.get(comment=comment, reporter=self.reporter)
+        self.assertEqual(report.status, CommentModerationReport.Status.DISMISSED)
+        self.assertEqual(action_response.json()["report_status"], CommentModerationReport.Status.DISMISSED)
+        self.assertEqual(action_response.json()["latest_action"], CommentModerationAction.Action.DISMISS)
+
     def test_queue_filters_return_current_status_buckets(self):
         statuses = [
             PostModerationReport.Status.OPEN,
