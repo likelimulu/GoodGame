@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import secrets
 from datetime import datetime as datetime_class, timedelta
 from typing import List, Optional
@@ -360,6 +361,56 @@ def list_gamehubs(request):
 def list_tags(request):
     """Return all existing tags (for the filter dropdown)."""
     return Tag.objects.order_by("name")
+
+
+_TAG_KEYWORDS: dict[str, set[str]] = {
+    "nerf":        {"nerfed", "sucks", "suck", "useless", "terrible", "trash", "weak",
+                    "destroyed", "worse", "bad", "ruined", "garbage", "unplayable", "worst"},
+    "buff":        {"buffed", "op", "overpowered", "strong", "powerful", "buffing", "broken"},
+    "bug":         {"crash", "freeze", "issue", "broken", "error", "fix", "glitching"},
+    "glitch":      {"crash", "freeze", "bugged", "broken", "glitching"},
+    "rant":        {"suck", "sucks", "hate", "awful", "terrible", "worst", "angry", "mad",
+                    "devs", "stupid", "ridiculous"},
+    "update":      {"patched", "hotfix", "patch"},
+    "patch":       {"updated", "hotfix", "patchnotes"},
+    "meta":        {"tier", "strongest", "best", "competitive"},
+    "guide":       {"tutorial", "walkthrough", "howto"},
+    "beginner":    {"noob", "newbie", "learning", "starting"},
+    "advanced":    {"expert", "tryhard", "skilled", "pro"},
+    "discussion":  {"thoughts", "opinion", "debate", "think"},
+    "competitive": {"tournament", "esport", "ladder", "ranked"},
+    "feedback":    {"suggestion", "suggest", "improve", "improvement"},
+    "highlight":   {"clip", "montage", "plays", "play"},
+}
+
+
+def _score_tag(tag_name: str, words: set[str]) -> int:
+    name = tag_name.lower()
+    score = 0
+    for word in words:
+        if name in word or (len(word) >= 4 and word in name):
+            score += 3
+    score += len(words & _TAG_KEYWORDS.get(name, set()))
+    return score
+
+
+@router.get("/tags/suggest", response=List[TagOut])
+def suggest_tags(request, title: str = "", body: str = ""):
+    """Suggest existing tags relevant to the given post title and body."""
+    MAX_SUGGESTIONS = 5
+    combined = f"{title} {body}".lower()
+    words = set(re.findall(r"[a-z0-9]+", combined))
+
+    if not words:
+        return []
+
+    scored = [
+        (tag, _score_tag(tag.name, words))
+        for tag in Tag.objects.order_by("name")
+    ]
+    scored = [(tag, s) for tag, s in scored if s > 0]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [tag for tag, _ in scored[:MAX_SUGGESTIONS]]
 
 
 # ── Search endpoint ───────────────────────────────────────────

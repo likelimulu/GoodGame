@@ -4,7 +4,7 @@ import Layout from "../components/Layout";
 import SearchableHubSelect from "../components/SearchableHubSelect";
 import TagEditor from "../components/TagEditor";
 import { api } from "../api/client";
-import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
+import type { GameHub, Post, PostStatus, ApiError, Tag } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/useAuth";
 
@@ -22,6 +22,9 @@ export default function CreatePostPage() {
   const [selectedHubId, setSelectedHubId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const requestedHubId = useMemo(() => searchParams.get("hub") ?? "", [searchParams]);
   const hubOptions = useMemo(
     () =>
@@ -62,6 +65,30 @@ export default function CreatePostPage() {
     return () => controller.abort();
   }, [requestedHubId, hubsEndpoint]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      if (!title.trim() && !body.trim()) {
+        setSuggestedTags([]);
+        return;
+      }
+      api
+        .get<Tag[]>(
+          `/tags/suggest?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`,
+          controller.signal
+        )
+        .then(({ status, data }) => {
+          if (status === 200 && Array.isArray(data))
+            setSuggestedTags(data.map((t) => t.name));
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [title, body]);
+
   async function handleSubmit(
     e: { preventDefault(): void; currentTarget: HTMLFormElement },
     status: PostStatus
@@ -69,8 +96,6 @@ export default function CreatePostPage() {
     e.preventDefault();
     const form = e.currentTarget;
     const gameHubId = parseInt(selectedHubId, 10);
-    const title = (form.elements.namedItem("title") as HTMLInputElement).value;
-    const body = (form.elements.namedItem("body") as HTMLTextAreaElement).value;
     const tagsRaw = (form.elements.namedItem("tags") as HTMLInputElement).value;
     const tags = tagsRaw ? tagsRaw.split(",").filter(Boolean) : [];
     const isQuestion = (
@@ -162,6 +187,8 @@ export default function CreatePostPage() {
                 type="text"
                 placeholder="Example: New patch changed ranked recoil patterns"
                 required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
               />
             </div>
 
@@ -172,10 +199,15 @@ export default function CreatePostPage() {
                 name="body"
                 placeholder="Share details, context, and your recommendation for other players..."
                 required
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
               />
             </div>
 
-            <TagEditor placeholder="Add a tag like Ranked" />
+            <TagEditor
+              placeholder="Add a tag like Ranked"
+              suggestedTags={suggestedTags}
+            />
 
             <div className="check-grid">
               <label className="check">

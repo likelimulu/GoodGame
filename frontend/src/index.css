@@ -1187,6 +1187,29 @@
     text-transform: uppercase;
   }
 
+  .tag.suggested {
+    display: inline-flex;
+    align-items: center;
+    font: inherit;
+    cursor: pointer;
+    border-color: #8fd4a0;
+    background: #f0fbf3;
+    color: #1a4d2e;
+  }
+
+  .tag-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .tag-suggestions-label {
+    font-size: 18px;
+    font-weight: 600;
+    color: #6b6760;
+  }
+
   .action-row {
     display: flex;
     flex-wrap: wrap;
