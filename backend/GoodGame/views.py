@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import secrets
 from datetime import datetime as datetime_class, timedelta
 from typing import List, Optional
@@ -22,6 +23,8 @@ from django.utils.text import get_valid_filename
 logger = logging.getLogger("GoodGame")
 
 from .models import (
+    CommentModerationAction,
+    CommentModerationReport,
     HIGH_REPUTATION_THRESHOLD,
     DeveloperFeedback,
     EmailVerificationToken,
@@ -39,6 +42,8 @@ from .models import (
 from .schemas import (
     AuthUserOut,
     AvatarOut,
+    CommentModerationReportOut,
+    CommentReportCreateIn,
     DeveloperFeedbackIn,
     DeveloperFeedbackOut,
     EmailVerifyIn,
@@ -358,6 +363,56 @@ def list_tags(request):
     return Tag.objects.order_by("name")
 
 
+_TAG_KEYWORDS: dict[str, set[str]] = {
+    "nerf":        {"nerfed", "sucks", "suck", "useless", "terrible", "trash", "weak",
+                    "destroyed", "worse", "bad", "ruined", "garbage", "unplayable", "worst"},
+    "buff":        {"buffed", "op", "overpowered", "strong", "powerful", "buffing", "broken"},
+    "bug":         {"crash", "freeze", "issue", "broken", "error", "fix", "glitching"},
+    "glitch":      {"crash", "freeze", "bugged", "broken", "glitching"},
+    "rant":        {"suck", "sucks", "hate", "awful", "terrible", "worst", "angry", "mad",
+                    "devs", "stupid", "ridiculous"},
+    "update":      {"patched", "hotfix", "patch"},
+    "patch":       {"updated", "hotfix", "patchnotes"},
+    "meta":        {"tier", "strongest", "best", "competitive"},
+    "guide":       {"tutorial", "walkthrough", "howto"},
+    "beginner":    {"noob", "newbie", "learning", "starting"},
+    "advanced":    {"expert", "tryhard", "skilled", "pro"},
+    "discussion":  {"thoughts", "opinion", "debate", "think"},
+    "competitive": {"tournament", "esport", "ladder", "ranked"},
+    "feedback":    {"suggestion", "suggest", "improve", "improvement"},
+    "highlight":   {"clip", "montage", "plays", "play"},
+}
+
+
+def _score_tag(tag_name: str, words: set[str]) -> int:
+    name = tag_name.lower()
+    score = 0
+    for word in words:
+        if name in word or (len(word) >= 4 and word in name):
+            score += 3
+    score += len(words & _TAG_KEYWORDS.get(name, set()))
+    return score
+
+
+@router.get("/tags/suggest", response=List[TagOut])
+def suggest_tags(request, title: str = "", body: str = ""):
+    """Suggest existing tags relevant to the given post title and body."""
+    MAX_SUGGESTIONS = 5
+    combined = f"{title} {body}".lower()
+    words = set(re.findall(r"[a-z0-9]+", combined))
+
+    if not words:
+        return []
+
+    scored = [
+        (tag, _score_tag(tag.name, words))
+        for tag in Tag.objects.order_by("name")
+    ]
+    scored = [(tag, s) for tag, s in scored if s > 0]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [tag for tag, _ in scored[:MAX_SUGGESTIONS]]
+
+
 # ── Search endpoint ───────────────────────────────────────────
 
 
@@ -429,10 +484,24 @@ def _posts_with_related_data():
     return Post.objects.select_related("game_hub", "author", "author__profile").prefetch_related("tags")
 
 
+def _comments_with_related_data():
+    return PostComment.objects.select_related(
+        "post",
+        "post__game_hub",
+        "post__author",
+        "post__author__profile",
+        "author",
+        "author__profile",
+    ).prefetch_related("post__tags")
+
+
 def _annotate_post_stats(queryset):
     vote_totals = PostVote.objects.filter(post_id=OuterRef("pk")).order_by().values("post")
     comment_totals = (
-        PostComment.objects.filter(post_id=OuterRef("pk")).order_by().values("post")
+        PostComment.objects.filter(
+            post_id=OuterRef("pk"),
+            status=PostComment.Status.PUBLISHED,
+        ).order_by().values("post")
     )
 
     trusted_upvotes = (
@@ -560,27 +629,55 @@ def _has_moderation_access(user):
     }
 
 
-def _create_moderation_notification(post, moderator, action_record, note: str):
-    if action_record.action == PostModerationAction.Action.WARN:
-        notification_type = Notification.Type.MODERATION_WARNING
+def _create_moderation_notification(content, moderator, action_record, note: str):
+    is_comment = isinstance(content, PostComment)
+    if action_record.action in {
+        PostModerationAction.Action.WARN,
+        CommentModerationAction.Action.WARN,
+    }:
+        notification_type = (
+            Notification.Type.COMMENT_WARNING
+            if is_comment
+            else Notification.Type.MODERATION_WARNING
+        )
         title = "Moderator warning"
-        message = f'Your post "{post.title}" received a moderator warning.'
-    elif action_record.action == PostModerationAction.Action.REMOVE:
-        notification_type = Notification.Type.POST_REMOVED
-        title = "Post removed"
-        message = f'Your post "{post.title}" was removed from GoodGame.'
+        if is_comment:
+            message = f'Your comment on "{content.post.title}" received a moderator warning.'
+        else:
+            message = f'Your post "{content.title}" received a moderator warning.'
+    elif action_record.action in {
+        PostModerationAction.Action.REMOVE,
+        CommentModerationAction.Action.REMOVE,
+    }:
+        notification_type = (
+            Notification.Type.COMMENT_REMOVED
+            if is_comment
+            else Notification.Type.POST_REMOVED
+        )
+        if is_comment:
+            title = "Comment removed"
+            message = f'Your comment on "{content.post.title}" was removed from GoodGame.'
+        else:
+            title = "Post removed"
+            message = f'Your post "{content.title}" was removed from GoodGame.'
     else:
         return None
 
     if note:
         message = f"{message}\n\nModerator note: {note}"
 
+    lookup = (
+        {"comment_moderation_action": action_record}
+        if is_comment
+        else {"moderation_action": action_record}
+    )
     notification, _ = Notification.objects.get_or_create(
-        moderation_action=action_record,
+        **lookup,
         defaults={
-            "recipient": post.author,
+            "recipient": content.author,
             "actor": moderator,
-            "post": post,
+            "post": content.post if is_comment else content,
+            "comment": content if is_comment else None,
             "type": notification_type,
             "title": title,
             "message": message,
@@ -589,7 +686,7 @@ def _create_moderation_notification(post, moderator, action_record, note: str):
     return notification
 
 
-def _annotate_moderation_queue(queryset):
+def _annotate_post_moderation_queue(queryset):
     reports = PostModerationReport.objects.filter(post_id=OuterRef("pk"))
     actions = PostModerationAction.objects.filter(post_id=OuterRef("pk")).order_by("-created_at")
     latest_reports = reports.order_by("-created_at")
@@ -629,15 +726,118 @@ def _annotate_moderation_queue(queryset):
     )
 
 
+def _annotate_comment_moderation_queue(queryset):
+    reports = CommentModerationReport.objects.filter(comment_id=OuterRef("pk"))
+    actions = CommentModerationAction.objects.filter(comment_id=OuterRef("pk")).order_by("-created_at")
+    latest_reports = reports.order_by("-created_at")
+
+    return queryset.annotate(
+        report_count=Coalesce(
+            Subquery(
+                reports.order_by().values("comment").annotate(total=Count("id")).values("total")[:1],
+                output_field=IntegerField(),
+            ),
+            Value(0),
+        ),
+        report_status=Subquery(
+            latest_reports.values("status")[:1],
+            output_field=CharField(),
+        ),
+        latest_report_reason=Subquery(
+            latest_reports.values("reason")[:1],
+            output_field=TextField(),
+        ),
+        latest_reported_at=Subquery(
+            latest_reports.values("created_at")[:1],
+            output_field=DateTimeField(),
+        ),
+        latest_action=Subquery(
+            actions.values("action")[:1],
+            output_field=CharField(),
+        ),
+        latest_action_note=Subquery(
+            actions.values("note")[:1],
+            output_field=TextField(),
+        ),
+        latest_action_at=Subquery(
+            actions.values("created_at")[:1],
+            output_field=DateTimeField(),
+        ),
+    )
+
+
 def _get_moderation_queue_item(post_id: int):
     return get_object_or_404(
-        _annotate_moderation_queue(_posts_with_related_data()),
+        _annotate_post_moderation_queue(_posts_with_related_data()),
         id=post_id,
     )
 
 
+def _get_comment_moderation_queue_item(comment_id: int):
+    return get_object_or_404(
+        _annotate_comment_moderation_queue(_comments_with_related_data()),
+        id=comment_id,
+    )
+
+
 def _notifications_for_user(user):
-    return Notification.objects.filter(recipient=user).select_related("actor", "post")
+    return Notification.objects.filter(recipient=user).select_related("actor", "post", "comment")
+
+
+def _serialize_post_queue_item(post):
+    return {
+        "id": post.id,
+        "target_type": "post",
+        "game_hub": post.game_hub,
+        "author": post.author,
+        "title": post.title,
+        "body": post.body,
+        "tags": list(post.tags.all()),
+        "is_question": post.is_question,
+        "has_spoilers": post.has_spoilers,
+        "status": post.status,
+        "created_at": post.created_at,
+        "updated_at": post.updated_at,
+        "report_status": post.report_status,
+        "report_count": post.report_count,
+        "latest_report_reason": post.latest_report_reason,
+        "latest_reported_at": post.latest_reported_at,
+        "latest_action": post.latest_action,
+        "latest_action_note": post.latest_action_note,
+        "latest_action_at": post.latest_action_at,
+        "parent_post_id": None,
+        "parent_post_title": None,
+        "attachment_name": None,
+        "attachment_url": None,
+    }
+
+
+def _serialize_comment_queue_item(comment, request):
+    return {
+        "id": comment.id,
+        "target_type": "comment",
+        "game_hub": comment.post.game_hub,
+        "author": comment.author,
+        "title": f'Comment on "{comment.post.title}"',
+        "body": comment.body,
+        "tags": list(comment.post.tags.all()),
+        "is_question": comment.post.is_question,
+        "has_spoilers": comment.post.has_spoilers,
+        "status": comment.status,
+        "created_at": comment.created_at,
+        "updated_at": comment.updated_at,
+        "report_status": comment.report_status,
+        "report_count": comment.report_count,
+        "latest_report_reason": comment.latest_report_reason,
+        "latest_reported_at": comment.latest_reported_at,
+        "latest_action": comment.latest_action,
+        "latest_action_note": comment.latest_action_note,
+        "latest_action_at": comment.latest_action_at,
+        "parent_post_id": comment.post_id,
+        "parent_post_title": comment.post.title,
+        "attachment_name": comment.attachment_original_name or None,
+        "attachment_url": _absolute_file_url(request, comment.attachment),
+    }
 
 
 @router.post("/posts", response={201: PostOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
@@ -848,7 +1048,10 @@ def list_post_comments(request, post_id: int):
     """List comments for a published post."""
     post = get_object_or_404(Post, id=post_id, status=Post.Status.PUBLISHED)
     comments = (
-        PostComment.objects.filter(post=post).select_related("author")
+        PostComment.objects.filter(
+            post=post,
+            status=PostComment.Status.PUBLISHED,
+        ).select_related("author")
     )
     return 200, _attach_comment_file_fields(comments, request)
 
@@ -888,6 +1091,43 @@ def create_post_comment(
 
     _attach_comment_file_fields([comment], request)
     return 201, comment
+
+
+@router.post(
+    "/comments/{comment_id}/reports",
+    response={201: CommentModerationReportOut, 400: ErrorOut, 401: ErrorOut, 404: ErrorOut, 409: ErrorOut},
+)
+def create_comment_report(request, comment_id: int, data: CommentReportCreateIn):
+    """Flag a published comment for moderator review."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+
+    comment = get_object_or_404(
+        PostComment.objects.select_related("post", "author"),
+        id=comment_id,
+        status=PostComment.Status.PUBLISHED,
+        post__status=Post.Status.PUBLISHED,
+    )
+    if comment.author_id == request.user.id:
+        return 409, {"error": "You cannot report your own comment"}
+
+    reason = data.reason.strip()
+    if not reason:
+        return 400, {"error": "Report reason is required"}
+
+    if CommentModerationReport.objects.filter(
+        comment=comment,
+        reporter=request.user,
+        status__in=[CommentModerationReport.Status.OPEN, CommentModerationReport.Status.ESCALATED],
+    ).exists():
+        return 409, {"error": "You already have an active report for this comment"}
+
+    report = CommentModerationReport.objects.create(
+        comment=comment,
+        reporter=request.user,
+        reason=reason,
+    )
+    return 201, report
 
 
 @router.post(
@@ -942,15 +1182,35 @@ def list_moderation_queue(request, status: str = PostModerationReport.Status.OPE
     }
     selected_status = status if status in allowed_statuses else PostModerationReport.Status.OPEN
 
-    queue = (
-        _annotate_moderation_queue(_posts_with_related_data())
+    post_queue = (
+        _annotate_post_moderation_queue(_posts_with_related_data())
         .filter(report_count__gt=0)
         .exclude(status=Post.Status.DRAFT)
-        .order_by("-latest_reported_at", "-report_count", "-updated_at")
     )
     if selected_status != "all":
-        queue = queue.filter(report_status=selected_status)
-    return 200, queue
+        post_queue = post_queue.filter(report_status=selected_status)
+
+    comment_queue = (
+        _annotate_comment_moderation_queue(_comments_with_related_data())
+        .filter(report_count__gt=0)
+        .exclude(post__status=Post.Status.DRAFT)
+    )
+    if selected_status != "all":
+        comment_queue = comment_queue.filter(report_status=selected_status)
+
+    items = [
+        *[_serialize_post_queue_item(post) for post in post_queue],
+        *[_serialize_comment_queue_item(comment, request) for comment in comment_queue],
+    ]
+    items.sort(
+        key=lambda item: (
+            item["latest_reported_at"] or item["updated_at"],
+            item["report_count"],
+            item["updated_at"],
+        ),
+        reverse=True,
+    )
+    return 200, items
 
 
 @router.post(
@@ -1019,7 +1279,79 @@ def moderate_post(request, post_id: int, data: PostModerationActionIn):
                 post.save(update_fields=["status", "updated_at"])
             _create_moderation_notification(post, request.user, action_record, note)
 
-    return 200, _get_moderation_queue_item(post.id)
+    return 200, _serialize_post_queue_item(_get_moderation_queue_item(post.id))
+
+
+@router.post(
+    "/moderation/comments/{comment_id}/actions",
+    response={200: ModerationQueueItemOut, 400: ErrorOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 409: ErrorOut},
+)
+def moderate_comment(request, comment_id: int, data: PostModerationActionIn):
+    """Apply a moderator action to a reported comment."""
+    if not request.user.is_authenticated:
+        return 401, {"error": "Authentication required"}
+    if not _has_moderation_access(request.user):
+        return 403, {"error": "Moderator access required"}
+
+    note = data.note.strip()
+
+    with transaction.atomic():
+        comment = get_object_or_404(
+            PostComment.objects.select_related("post", "author").select_for_update(),
+            id=comment_id,
+        )
+        if comment.post.status == Post.Status.DRAFT:
+            return 404, {"error": "Comment not found"}
+
+        active_reports = CommentModerationReport.objects.select_for_update().filter(
+            comment=comment,
+            status__in=[CommentModerationReport.Status.OPEN, CommentModerationReport.Status.ESCALATED],
+        )
+        if not active_reports.exists():
+            return 409, {"error": "No active moderation reports for this comment"}
+
+        if data.action == CommentModerationAction.Action.REMOVE and comment.status == PostComment.Status.DELETED:
+            return 409, {"error": "Comment already removed"}
+
+        action_record = CommentModerationAction.objects.create(
+            comment=comment,
+            moderator=request.user,
+            action=data.action,
+            note=note,
+        )
+        logger.info(
+            "Moderator '%s' applied action '%s' to comment %d (author: '%s')",
+            request.user.username, data.action, comment.id, comment.author.username,
+        )
+
+        now = timezone.now()
+        if data.action == CommentModerationAction.Action.ESCALATE:
+            active_reports.update(
+                status=CommentModerationReport.Status.ESCALATED,
+                reviewed_by=request.user,
+                reviewed_at=now,
+                updated_at=now,
+            )
+        elif data.action == CommentModerationAction.Action.DISMISS:
+            active_reports.update(
+                status=CommentModerationReport.Status.DISMISSED,
+                reviewed_by=request.user,
+                reviewed_at=now,
+                updated_at=now,
+            )
+        else:
+            active_reports.update(
+                status=CommentModerationReport.Status.ACTIONED,
+                reviewed_by=request.user,
+                reviewed_at=now,
+                updated_at=now,
+            )
+            if data.action == CommentModerationAction.Action.REMOVE:
+                comment.status = PostComment.Status.DELETED
+                comment.save(update_fields=["status", "updated_at"])
+            _create_moderation_notification(comment, request.user, action_record, note)
+
+    return 200, _serialize_comment_queue_item(_get_comment_moderation_queue_item(comment.id), request)
 
 
 # ── Developer Feedback endpoints ──────────────────────────────

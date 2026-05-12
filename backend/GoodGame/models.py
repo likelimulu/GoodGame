@@ -183,6 +183,10 @@ class PostVote(models.Model):
 
 
 class PostComment(models.Model):
+    class Status(models.TextChoices):
+        PUBLISHED = "published", "Published"
+        DELETED = "deleted", "Deleted"
+
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name="comments")
     author = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="post_comments"
@@ -190,7 +194,13 @@ class PostComment(models.Model):
     body = models.TextField()
     attachment = models.FileField(upload_to="comment_attachments/", blank=True)
     attachment_original_name = models.CharField(max_length=255, blank=True)
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PUBLISHED,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["created_at"]
@@ -238,6 +248,47 @@ class PostModerationReport(models.Model):
 
     def __str__(self):
         return f"Report {self.id} on post {self.post_id} ({self.status})"
+
+
+class CommentModerationReport(models.Model):
+    class Status(models.TextChoices):
+        OPEN = "open", "Open"
+        ACTIONED = "actioned", "Actioned"
+        ESCALATED = "escalated", "Escalated"
+        DISMISSED = "dismissed", "Dismissed"
+
+    comment = models.ForeignKey(
+        PostComment,
+        on_delete=models.CASCADE,
+        related_name="moderation_reports",
+    )
+    reporter = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="submitted_comment_moderation_reports",
+    )
+    reason = models.TextField()
+    status = models.CharField(
+        max_length=12,
+        choices=Status.choices,
+        default=Status.OPEN,
+    )
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_comment_reports",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Report {self.id} on comment {self.comment_id} ({self.status})"
 
 
 class DeveloperFeedback(models.Model):
@@ -297,10 +348,43 @@ class PostModerationAction(models.Model):
         return f"{self.action} on post {self.post_id} by {self.moderator.username}"
 
 
+class CommentModerationAction(models.Model):
+    class Action(models.TextChoices):
+        WARN = "warn", "Warn"
+        REMOVE = "remove", "Remove"
+        ESCALATE = "escalate", "Escalate"
+        DISMISS = "dismiss", "Dismiss"
+
+    comment = models.ForeignKey(
+        PostComment,
+        on_delete=models.CASCADE,
+        related_name="moderation_actions",
+    )
+    moderator = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="comment_moderation_actions",
+    )
+    action = models.CharField(
+        max_length=10,
+        choices=Action.choices,
+    )
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.action} on comment {self.comment_id} by {self.moderator.username}"
+
+
 class Notification(models.Model):
     class Type(models.TextChoices):
         MODERATION_WARNING = "moderation_warning", "Moderation Warning"
         POST_REMOVED = "post_removed", "Post Removed"
+        COMMENT_WARNING = "comment_warning", "Comment Warning"
+        COMMENT_REMOVED = "comment_removed", "Comment Removed"
 
     recipient = models.ForeignKey(
         User,
@@ -321,8 +405,22 @@ class Notification(models.Model):
         blank=True,
         related_name="notifications",
     )
+    comment = models.ForeignKey(
+        PostComment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
     moderation_action = models.OneToOneField(
         PostModerationAction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification",
+    )
+    comment_moderation_action = models.OneToOneField(
+        CommentModerationAction,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

@@ -68,6 +68,42 @@ variable "cors_allowed_origins" {
   default     = ""
 }
 
+# ── Email (SMTP) ─────────────────────────────────────────────────────────────
+
+variable "email_host" {
+  description = "SMTP server hostname (e.g. smtp.gmail.com)"
+  type        = string
+  default     = "smtp.gmail.com"
+}
+
+variable "email_port" {
+  description = "SMTP server port"
+  type        = number
+  default     = 587
+}
+
+variable "email_host_user" {
+  description = "SMTP login username / sender address"
+  type        = string
+}
+
+variable "email_host_password" {
+  description = "SMTP login password (Gmail App Password)"
+  type        = string
+  sensitive   = true
+}
+
+variable "default_from_email" {
+  description = "Default From address for outgoing emails"
+  type        = string
+  default     = "goodgameteam8@gmail.com"
+}
+
+variable "frontend_url" {
+  description = "Public URL of the frontend (used in verification email links)"
+  type        = string
+}
+
 # ── Container Registry ────────────────────────────────────────────────────────
 
 variable "registry_sku" {

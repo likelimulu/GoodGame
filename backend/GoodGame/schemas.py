@@ -224,6 +224,10 @@ class PostReportCreateIn(Schema):
     reason: str = Field(..., min_length=1, max_length=500)
 
 
+class CommentReportCreateIn(Schema):
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
 class PostReportAuthorOut(Schema):
     id: int
     username: str
@@ -244,6 +248,21 @@ class PostModerationReportOut(Schema):
         return obj.reviewed_by.username if obj.reviewed_by else None
 
 
+class CommentModerationReportOut(Schema):
+    id: int
+    comment_id: int
+    reporter: PostReportAuthorOut
+    reason: str
+    status: str
+    reviewed_at: Optional[datetime] = None
+    reviewed_by_username: Optional[str] = None
+    created_at: datetime
+
+    @staticmethod
+    def resolve_reviewed_by_username(obj):
+        return obj.reviewed_by.username if obj.reviewed_by else None
+
+
 class PostModerationActionIn(Schema):
     action: Literal["warn", "remove", "escalate", "dismiss"]
     note: str = Field("", max_length=1000)
@@ -251,6 +270,7 @@ class PostModerationActionIn(Schema):
 
 class ModerationQueueItemOut(Schema):
     id: int
+    target_type: Literal["post", "comment"]
     game_hub: GameHubOut
     author: PostAuthorOut
     title: str
@@ -268,6 +288,10 @@ class ModerationQueueItemOut(Schema):
     latest_action: Optional[str] = None
     latest_action_note: Optional[str] = None
     latest_action_at: Optional[datetime] = None
+    parent_post_id: Optional[int] = None
+    parent_post_title: Optional[str] = None
+    attachment_name: Optional[str] = None
+    attachment_url: Optional[str] = None
 
 
 class NotificationOut(Schema):
@@ -281,6 +305,7 @@ class NotificationOut(Schema):
     post_id: Optional[int] = None
     post_title: Optional[str] = None
     post_status: Optional[str] = None
+    comment_id: Optional[int] = None
 
     @staticmethod
     def resolve_actor_username(obj):
@@ -297,6 +322,10 @@ class NotificationOut(Schema):
     @staticmethod
     def resolve_post_status(obj):
         return obj.post.status if obj.post else None
+
+    @staticmethod
+    def resolve_comment_id(obj):
+        return obj.comment_id
 
 
 # ── User profile schemas ───────────────────────────────────────────────────────

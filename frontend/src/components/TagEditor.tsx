@@ -14,12 +14,14 @@ interface TagEditorProps {
   initialTags?: string[];
   placeholder?: string;
   hint?: string;
+  suggestedTags?: string[];
 }
 
 export default function TagEditor({
   initialTags = [],
   placeholder = "Add a tag",
   hint = "Add up to 5 short tags for discoverability.",
+  suggestedTags = [],
 }: TagEditorProps) {
   const [tags, setTags] = useState<string[]>(initialTags);
   const [draftTag, setDraftTag] = useState("");
@@ -30,6 +32,10 @@ export default function TagEditor({
       ? [...tags, normalizedDraftTag]
       : tags;
 
+  const visibleSuggestions = suggestedTags.filter(
+    (s) => !tags.includes(s) && tags.length < MAX_TAGS
+  );
+
   function addTag() {
     const tag = normalizeTag(draftTag);
     if (!tag || tags.includes(tag) || tags.length >= MAX_TAGS) {
@@ -38,6 +44,11 @@ export default function TagEditor({
     }
     setTags([...tags, tag]);
     setDraftTag("");
+  }
+
+  function addSuggestedTag(tag: string) {
+    if (tags.includes(tag) || tags.length >= MAX_TAGS) return;
+    setTags([...tags, tag]);
   }
 
   function removeTag(tag: string) {
@@ -86,6 +97,21 @@ export default function TagEditor({
             </button>
           ))}
         </div>
+        {visibleSuggestions.length > 0 && (
+          <div className="tag-suggestions">
+            <span className="tag-suggestions-label">Suggested:</span>
+            {visibleSuggestions.map((tag) => (
+              <button
+                key={tag}
+                className="tag suggested"
+                type="button"
+                onClick={() => addSuggestedTag(tag)}
+              >
+                + #{tag}
+              </button>
+            ))}
+          </div>
+        )}
         <input type="hidden" name="tags" value={submittedTags.join(",")} />
       </div>
     </div>

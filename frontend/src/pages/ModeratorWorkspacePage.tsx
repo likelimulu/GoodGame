@@ -23,7 +23,7 @@ const FILTER_OPTIONS: Array<{ value: QueueFilter; label: string }> = [
 
 const ACTION_LABELS: Record<ModerationActionType, string> = {
   warn: "Warn Author",
-  remove: "Remove Post",
+  remove: "Remove Content",
   escalate: "Escalate",
   dismiss: "Dismiss Report",
 };
@@ -41,10 +41,18 @@ function getQueueStatusClass(status: ModerationReportStatus) {
   return `queue-status queue-status-${status}`;
 }
 
-function getActionToast(action: ModerationActionType) {
+function getActionToast(action: ModerationActionType, targetType: ModerationQueueItem["target_type"]) {
   if (action === "warn") return "Author warned and report resolved";
-  if (action === "remove") return "Post removed from the public feed";
-  if (action === "escalate") return "Post escalated for higher-level review";
+  if (action === "remove") {
+    return targetType === "comment"
+      ? "Comment removed from the discussion thread"
+      : "Post removed from the public feed";
+  }
+  if (action === "escalate") {
+    return targetType === "comment"
+      ? "Comment escalated for higher-level review"
+      : "Post escalated for higher-level review";
+  }
   return "Report dismissed";
 }
 
@@ -54,8 +62,8 @@ export default function ModeratorWorkspacePage() {
   const [items, setItems] = useState<ModerationQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busyPostId, setBusyPostId] = useState<number | null>(null);
-  const [actionNotes, setActionNotes] = useState<Record<number, string>>({});
+  const [busyItemKey, setBusyItemKey] = useState<string | null>(null);
+  const [actionNotes, setActionNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -105,33 +113,42 @@ export default function ModeratorWorkspacePage() {
   }, [items]);
 
   async function handleAction(item: ModerationQueueItem, action: ModerationActionType) {
-    setBusyPostId(item.id);
+    const itemKey = `${item.target_type}:${item.id}`;
+    setBusyItemKey(itemKey);
     setError(null);
 
     const { status, data } = await api.post<ModerationQueueItem | ApiError>(
-      `/moderation/posts/${item.id}/actions`,
+      item.target_type === "comment"
+        ? `/moderation/comments/${item.id}/actions`
+        : `/moderation/posts/${item.id}/actions`,
       {
         action,
-        note: actionNotes[item.id]?.trim() ?? "",
+        note: actionNotes[itemKey]?.trim() ?? "",
       }
     );
 
-    setBusyPostId(null);
+    setBusyItemKey(null);
 
     if (status === 200) {
       const updatedItem = data as ModerationQueueItem;
       setItems((current) => {
         if (filter !== "all" && updatedItem.report_status !== filter) {
-          return current.filter((entry) => entry.id !== item.id);
+          return current.filter(
+            (entry) => !(entry.target_type === item.target_type && entry.id === item.id),
+          );
         }
-        return current.map((entry) => (entry.id === item.id ? updatedItem : entry));
+        return current.map((entry) =>
+          entry.target_type === item.target_type && entry.id === item.id
+            ? updatedItem
+            : entry,
+        );
       });
       setActionNotes((current) => {
         const next = { ...current };
-        delete next[item.id];
+        delete next[itemKey];
         return next;
       });
-      addToast(getActionToast(action), "success");
+      addToast(getActionToast(action, item.target_type), "success");
       return;
     }
 
@@ -216,7 +233,7 @@ export default function ModeratorWorkspacePage() {
             <div className="feed-empty-state">
               <h3 className="empty-title">Queue Clear</h3>
               <p className="helper">
-                There are no posts in the {filter} queue right now.
+                There is no reported content in the {filter} queue right now.
               </p>
             </div>
           ) : (
@@ -224,7 +241,7 @@ export default function ModeratorWorkspacePage() {
               <section className="moderator-panel">
                 <div className="moderator-panel-head">
                   <div>
-                    <h3 className="moderator-panel-title">Reported Posts</h3>
+                    <h3 className="moderator-panel-title">Reported Content</h3>
                     <p className="helper">
                       Queue items are ordered by the newest report activity so urgent issues
                       stay near the top.
@@ -235,15 +252,18 @@ export default function ModeratorWorkspacePage() {
 
                 <div className="moderator-list">
                   {items.map((item) => {
-                    const busy = busyPostId === item.id;
-                    const note = actionNotes[item.id] ?? "";
+                    const itemKey = `${item.target_type}:${item.id}`;
+                    const busy = busyItemKey === itemKey;
+                    const note = actionNotes[itemKey] ?? "";
+                    const noteFieldId = `moderation-note-${item.target_type}-${item.id}`;
                     const actionable = isActionable(item.report_status);
                     return (
-                      <article className="moderator-item" key={item.id}>
+                      <article className="moderator-item" key={itemKey}>
                         <div className="moderator-item-head">
                           <div>
                             <h4 className="moderator-item-title">{item.title}</h4>
                             <div className="moderator-item-meta">
+                              <span>{item.target_type === "comment" ? "Comment Report" : "Post Report"}</span>
                               <span>{item.game_hub.name}</span>
                               <span>by {item.author.username}</span>
                               <span>Updated {formatDate(item.updated_at)}</span>
@@ -261,6 +281,26 @@ export default function ModeratorWorkspacePage() {
                         </div>
 
                         <p className="moderator-item-copy">{item.body}</p>
+
+                        {item.target_type === "comment" && item.parent_post_id ? (
+                          <p className="helper">
+                            Parent thread:{" "}
+                            <Link className="text-link" to={`/posts/${item.parent_post_id}`}>
+                              {item.parent_post_title ?? `Post #${item.parent_post_id}`}
+                            </Link>
+                          </p>
+                        ) : null}
+
+                        {item.attachment_url ? (
+                          <a
+                            className="comment-attachment"
+                            href={item.attachment_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open {item.attachment_name ?? "attachment"}
+                          </a>
+                        ) : null}
 
                         <div className="post-badges">
                           {item.is_question && <span className="pill pill-question">Question</span>}
@@ -293,16 +333,16 @@ export default function ModeratorWorkspacePage() {
                         {actionable ? (
                           <>
                             <div className="field moderation-note-field">
-                              <label htmlFor={`moderation-note-${item.id}`}>Moderator Note</label>
+                              <label htmlFor={noteFieldId}>Moderator Note</label>
                               <textarea
-                                id={`moderation-note-${item.id}`}
+                                id={noteFieldId}
                                 rows={3}
                                 placeholder="Add context for this moderation action"
                                 value={note}
                                 onChange={(event) =>
                                   setActionNotes((current) => ({
                                     ...current,
-                                    [item.id]: event.target.value,
+                                    [itemKey]: event.target.value,
                                   }))
                                 }
                               />
@@ -326,8 +366,11 @@ export default function ModeratorWorkspacePage() {
                                   </button>
                                 )
                               )}
-                              <Link className="btn ghost" to="/posts">
-                                Open Community Feed
+                              <Link
+                                className="btn ghost"
+                                to={item.parent_post_id ? `/posts/${item.parent_post_id}` : "/posts"}
+                              >
+                                {item.parent_post_id ? "Open Parent Thread" : "Open Community Feed"}
                               </Link>
                             </div>
                           </>
@@ -337,8 +380,11 @@ export default function ModeratorWorkspacePage() {
                               This item is already {item.report_status}. Use the queue filter to
                               focus on unresolved reports.
                             </span>
-                            <Link className="btn ghost" to="/posts">
-                              Open Community Feed
+                            <Link
+                              className="btn ghost"
+                              to={item.parent_post_id ? `/posts/${item.parent_post_id}` : "/posts"}
+                            >
+                              {item.parent_post_id ? "Open Parent Thread" : "Open Community Feed"}
                             </Link>
                           </div>
                         )}
@@ -360,10 +406,10 @@ export default function ModeratorWorkspacePage() {
                   </div>
 
                   <ul className="rule-list">
-                    <li>Warn keeps the post live and resolves the current report set.</li>
-                    <li>Remove soft-deletes the post and clears the active report queue.</li>
+                    <li>Warn keeps the reported content live and resolves the current report set.</li>
+                    <li>Remove hides the reported post or comment and clears the active queue.</li>
                     <li>Escalate keeps the item visible for higher-level moderation review.</li>
-                    <li>Dismiss closes the report without changing the underlying post.</li>
+                    <li>Dismiss closes the report without changing the underlying content.</li>
                   </ul>
                 </section>
 

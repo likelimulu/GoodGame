@@ -892,6 +892,108 @@
     padding: 14px 16px;
   }
 
+  .search-combobox {
+    position: relative;
+  }
+
+  .search-combobox-shell {
+    position: relative;
+  }
+
+  .search-combobox-input {
+    padding-right: 164px;
+  }
+
+  .search-combobox-clear {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    border: 2px solid rgba(211, 188, 134, 0.9);
+    border-radius: 9999px;
+    background: rgba(255, 248, 232, 0.95);
+    color: var(--color-gg-ink-soft);
+    font-family: var(--font-pixel);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+
+  .search-combobox-clear:hover {
+    border-color: rgba(76, 184, 255, 0.42);
+    color: var(--color-gg-ink);
+  }
+
+  .search-combobox-panel {
+    position: absolute;
+    z-index: 12;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 3px solid #d3bc86;
+    border-radius: 18px;
+    background: rgba(255, 251, 241, 0.98);
+    box-shadow:
+      0 18px 40px rgba(13, 19, 28, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  }
+
+  .search-combobox-status {
+    margin: 0;
+    color: var(--color-gg-ink-soft);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .search-combobox-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .search-combobox-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 2px solid #d8bf88;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.86);
+    color: var(--color-gg-ink);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.05;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .search-combobox-option:hover,
+  .search-combobox-option.is-active {
+    border-color: rgba(76, 184, 255, 0.46);
+    background: rgba(232, 246, 255, 0.96);
+  }
+
+  .search-combobox-option-meta {
+    color: var(--color-gg-ink-soft);
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
   .password-wrapper {
     position: relative;
     display: flex;
@@ -1083,6 +1185,29 @@
     font-size: 14px;
     line-height: 1;
     text-transform: uppercase;
+  }
+
+  .tag.suggested {
+    display: inline-flex;
+    align-items: center;
+    font: inherit;
+    cursor: pointer;
+    border-color: #8fd4a0;
+    background: #f0fbf3;
+    color: #1a4d2e;
+  }
+
+  .tag-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .tag-suggestions-label {
+    font-size: 18px;
+    font-weight: 600;
+    color: #6b6760;
   }
 
   .action-row {
@@ -1957,6 +2082,14 @@
     background: rgba(255, 255, 255, 0.52);
   }
 
+  .comment-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
   .comment-meta {
     display: flex;
     flex-wrap: wrap;
@@ -1982,6 +2115,10 @@
     font-weight: 700;
     line-height: 1.05;
     text-decoration: none;
+  }
+
+  .comment-report-panel {
+    margin-top: 4px;
   }
 
   .comment-form {
@@ -2532,6 +2669,11 @@
     padding: 10px 12px;
   }
 
+  .advanced-filters-grid .search-combobox-input {
+    font-size: 18px;
+    padding: 10px 112px 10px 12px;
+  }
+
   @media (max-width: 600px) {
     .advanced-filters-grid {
       grid-template-columns: 1fr;
@@ -2594,6 +2736,16 @@
     padding: 10px 14px;
     min-height: 48px;
     border-radius: 14px;
+  }
+
+  .feedback-filters .search-combobox-input {
+    padding: 10px 112px 10px 14px;
+  }
+
+  .feedback-filters .search-combobox-clear,
+  .advanced-filters-grid .search-combobox-clear {
+    font-size: 10px;
+    padding: 7px 10px;
   }
 
   .feedback-filters .field label {
@@ -2876,6 +3028,25 @@
     .field select,
     .field textarea {
       font-size: 26px;
+    }
+
+    .search-combobox-input {
+      padding-right: 16px;
+    }
+
+    .search-combobox-clear {
+      position: static;
+      transform: none;
+      margin-top: 8px;
+      width: fit-content;
+    }
+
+    .search-combobox-panel {
+      padding: 10px;
+    }
+
+    .search-combobox-option {
+      font-size: 18px;
     }
 
     .btn {

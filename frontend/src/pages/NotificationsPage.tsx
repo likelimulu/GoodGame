@@ -9,6 +9,8 @@ import { useToast } from "../context/ToastContext";
 const NOTIFICATION_LABELS: Record<NotificationType, string> = {
   moderation_warning: "Warning",
   post_removed: "Post Removed",
+  comment_warning: "Comment Warning",
+  comment_removed: "Comment Removed",
 };
 
 function formatDate(value: string) {
@@ -18,6 +20,10 @@ function formatDate(value: string) {
 function getPostReference(notification: UserNotification) {
   if (!notification.post_id || !notification.post_title) {
     return "Related post is no longer available.";
+  }
+
+  if (notification.comment_id) {
+    return `Comment on: ${notification.post_title} (#${notification.post_id})`;
   }
 
   if (notification.post_status === "deleted") {
@@ -112,7 +118,7 @@ export default function NotificationsPage() {
           <span className="eyebrow">Inbox</span>
           <h1 className="headline">Notifications</h1>
           <p className="subhead">
-            Review moderation messages about your GoodGame posts.
+            Review moderation messages about your GoodGame posts and comments.
           </p>
 
           <div className="feed-sidebar-stack">
@@ -126,8 +132,8 @@ export default function NotificationsPage() {
                 <p className="moderator-summary-value">{notifications.length}</p>
               </article>
             </div>
-            <p className="helper moderator-hero-copy">
-              Warnings and removed-post notices appear here. Report activity and internal
+              <p className="helper moderator-hero-copy">
+              Warnings and removed-content notices appear here. Report activity and internal
               moderator workflow changes are not shown in this inbox.
             </p>
           </div>

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import SearchableHubSelect from "../components/SearchableHubSelect";
 import TagEditor from "../components/TagEditor";
 import Spinner from "../components/Spinner";
 import { api } from "../api/client";
-import type { GameHub, Post, PostStatus, ApiError } from "../api/types";
+import type { GameHub, Post, PostStatus, ApiError, Tag } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/useAuth";
 
@@ -20,8 +21,17 @@ export default function EditPostPage() {
 
   const [post, setPost] = useState<Post | null>(null);
   const [gameHubs, setGameHubs] = useState<GameHub[]>([]);
+  const [selectedHubId, setSelectedHubId] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+  const hubOptions = gameHubs.map((hub) => ({
+    value: String(hub.id),
+    label: hub.name,
+    keywords: [hub.slug],
+  }));
 
   const hubsEndpoint =
     user?.role === "developer" ? "/developer/gamehubs" : "/gamehubs";
@@ -40,22 +50,47 @@ export default function EditPostPage() {
       });
 
     if (postId) {
-      api
-        .get<Post | ApiError>(`/posts/${postId}`, signal)
-        .then(({ status, data }) => {
-          if (status === 200) {
-            setPost(data as Post);
-          } else {
-            navigate(`/error/${status || 404}`, { replace: true });
-          }
-        })
-        .catch((err: unknown) => {
-          if (!isAbortError(err)) navigate("/error/404", { replace: true });
-        });
+      api.get<Post | ApiError>(`/posts/${postId}`, signal).then(({ status, data }) => {
+        if (status === 200) {
+          const nextPost = data as Post;
+          setPost(nextPost);
+          setSelectedHubId(String(nextPost.game_hub.id));
+          setTitle(nextPost.title);
+          setBody(nextPost.body);
+        } else {
+          navigate(`/error/${status || 404}`, { replace: true });
+        }
+      }).catch((err: unknown) => {
+        if (!isAbortError(err)) navigate("/error/404", { replace: true });
+      });
     }
 
     return () => controller.abort();
-  }, [postId, hubsEndpoint, navigate]);
+  }, [navigate, postId, hubsEndpoint]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      if (!title.trim() && !body.trim()) {
+        setSuggestedTags([]);
+        return;
+      }
+      api
+        .get<Tag[]>(
+          `/tags/suggest?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`,
+          controller.signal
+        )
+        .then(({ status, data }) => {
+          if (status === 200 && Array.isArray(data))
+            setSuggestedTags(data.map((t) => t.name));
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [title, body]);
 
   async function handleSubmit(
     e: { preventDefault(): void; currentTarget: HTMLFormElement },
@@ -63,11 +98,7 @@ export default function EditPostPage() {
   ) {
     e.preventDefault();
     const form = e.currentTarget;
-    const gameHubId = parseInt(
-      (form.elements.namedItem("game_hub_id") as HTMLSelectElement).value
-    );
-    const title = (form.elements.namedItem("title") as HTMLInputElement).value;
-    const body = (form.elements.namedItem("body") as HTMLTextAreaElement).value;
+    const gameHubId = parseInt(selectedHubId, 10);
     const tagsRaw = (form.elements.namedItem("tags") as HTMLInputElement).value;
     const tags = tagsRaw ? tagsRaw.split(",").filter(Boolean) : [];
     const isQuestion = (
@@ -76,6 +107,13 @@ export default function EditPostPage() {
     const hasSpoilers = (
       form.elements.namedItem("contains_spoilers") as HTMLInputElement
     ).checked;
+
+    if (Number.isNaN(gameHubId)) {
+      const errMsg = "Select a forum before saving.";
+      setSubmitError(errMsg);
+      addToast(errMsg, "error");
+      return;
+    }
 
     setSubmitError(null);
     setSubmitting(true);
@@ -158,18 +196,14 @@ export default function EditPostPage() {
 
             <div className="field">
               <label htmlFor="post-edit-forum">Forum</label>
-              <select
+              <SearchableHubSelect
                 id="post-edit-forum"
                 name="game_hub_id"
-                key={post?.id}
-                defaultValue={post?.game_hub.id}
-              >
-                {gameHubs.map((hub) => (
-                  <option key={hub.id} value={hub.id}>
-                    {hub.name}
-                  </option>
-                ))}
-              </select>
+                value={selectedHubId}
+                options={hubOptions}
+                disabled={gameHubs.length === 0}
+                onChange={setSelectedHubId}
+              />
             </div>
 
             <div className="field">
@@ -178,9 +212,9 @@ export default function EditPostPage() {
                 id="post-edit-title"
                 name="title"
                 type="text"
-                defaultValue={post?.title ?? ""}
-                key={post?.id}
                 required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
               />
             </div>
 
@@ -190,8 +224,8 @@ export default function EditPostPage() {
                 id="post-edit-body"
                 name="body"
                 required
-                defaultValue={post?.body ?? ""}
-                key={post?.id}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
               />
             </div>
 
@@ -200,6 +234,7 @@ export default function EditPostPage() {
               initialTags={post?.tags.map((t) => t.name) ?? []}
               placeholder="Add a tag"
               hint="Update the tags if the thread focus changes."
+              suggestedTags={suggestedTags}
             />
 
             <div className="check-grid">

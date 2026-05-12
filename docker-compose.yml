@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: goodgame
       POSTGRES_USER: goodgameadmin
-      POSTGRES_PASSWORD: localpass
+      POSTGRES_PASSWORD: localpass123
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -46,6 +46,7 @@ services:
       sh -c "python manage.py migrate --noinput &&
              python manage.py seed_hubs;
              python manage.py seed_test_users;
+             python manage.py seed_tags;
              python manage.py runserver 0.0.0.0:8000"
     depends_on:
       db:
