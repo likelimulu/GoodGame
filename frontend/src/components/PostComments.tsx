@@ -39,6 +39,7 @@ export default function PostComments({
   const [reportReasons, setReportReasons] = useState<Record<number, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const loadComments = useCallback(async () => {
     setLoading(true);
@@ -65,6 +66,14 @@ export default function PostComments({
       return () => window.clearTimeout(timer);
     }
   }, [expandedByDefault, hasLoaded, loadComments]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+    // previewUrl intentionally omitted: we only want to revoke on unmount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleToggle() {
     const nextOpen = !isOpen;
@@ -111,6 +120,10 @@ export default function PostComments({
       setHasLoaded(true);
       setBody("");
       setAttachmentName("");
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+      }
       form.reset();
       onCommentCreated?.();
       return;
@@ -218,7 +231,11 @@ export default function PostComments({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Open {comment.attachment_name ?? "attachment"}
+                      <img
+                        className="comment-attachment-image"
+                        src={comment.attachment_url}
+                        alt={comment.attachment_name ?? "attachment"}
+                      />
                     </a>
                   )}
                   {openReportCommentId === comment.id ? (
@@ -287,13 +304,34 @@ export default function PostComments({
                   <input
                     name="attachment"
                     type="file"
-                    onChange={(e) => setAttachmentName(e.target.files?.[0]?.name ?? "")}
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      setAttachmentName(file?.name ?? "");
+                      if (previewUrl) URL.revokeObjectURL(previewUrl);
+                      setPreviewUrl(file ? URL.createObjectURL(file) : null);
+                    }}
                   />
                 </label>
                 <span className="helper compact">
                   {attachmentName || "Attach a screenshot, notes file, or clip."}
                 </span>
               </div>
+
+              {previewUrl && (
+                <a
+                  className="comment-attachment"
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <img
+                    className="comment-attachment-image"
+                    src={previewUrl}
+                    alt={attachmentName || "attachment preview"}
+                  />
+                </a>
+              )}
 
               {submitError && <p className="form-error">{submitError}</p>}
 

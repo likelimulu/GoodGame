@@ -298,7 +298,11 @@ export default function ModeratorWorkspacePage() {
                             target="_blank"
                             rel="noreferrer"
                           >
-                            Open {item.attachment_name ?? "attachment"}
+                            <img
+                              className="comment-attachment-image"
+                              src={item.attachment_url}
+                              alt={item.attachment_name ?? "attachment"}
+                            />
                           </a>
                         ) : null}
 

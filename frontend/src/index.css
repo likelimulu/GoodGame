@@ -2117,6 +2117,15 @@
     text-decoration: none;
   }
 
+  .comment-attachment-image {
+    display: block;
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: 6px;
+    object-fit: contain;
+    margin-top: 8px;
+  }
+
   .comment-report-panel {
     margin-top: 4px;
   }
