@@ -606,7 +606,11 @@ def _absolute_file_url(request, field_file):
     file_url = field_file.url
     if file_url.startswith("http://") or file_url.startswith("https://"):
         return file_url
-    return request.build_absolute_uri(file_url)
+    # Local storage: return the relative path so the browser resolves it
+    # against the page origin. The Vite dev proxy forwards /media/* to the
+    # backend container, avoiding the unresolvable internal hostname
+    # (api:8000) that request.build_absolute_uri() would produce in Docker.
+    return file_url
 
 
 def _attach_comment_file_fields(comments, request):

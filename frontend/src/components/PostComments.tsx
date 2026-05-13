@@ -67,6 +67,14 @@ export default function PostComments({
     }
   }, [expandedByDefault, hasLoaded, loadComments]);
 
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+    // previewUrl intentionally omitted: we only want to revoke on unmount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleToggle() {
     const nextOpen = !isOpen;
     setIsOpen(nextOpen);
