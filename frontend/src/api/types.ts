@@ -1,3 +1,6 @@
+// Mirrors backend/GoodGame/schemas.py. Keep these types in sync with Ninja
+// response schemas because the API client intentionally does no runtime mapping.
+
 export type UserRole = "admin" | "contributor" | "developer" | "moderator";
 
 export interface AuthUser {
@@ -41,6 +44,7 @@ export interface Post {
   has_spoilers: boolean;
   status: PostStatus;
   is_edited: boolean;
+  // Derived by the backend from author reputation and moderation/feed state.
   is_priority: boolean;
   is_pinned: boolean;
   created_at: string;
@@ -50,6 +54,7 @@ export interface Post {
   downvote_count: number;
   current_user_vote: number;
   comment_count: number;
+  // Backend ranking score; display should use vote_score/counts instead.
   weighted_score: number;
 }
 
@@ -103,9 +108,11 @@ export interface ModeratorAccessRequest {
 }
 
 export type ModerationReportStatus = "open" | "actioned" | "escalated" | "dismissed";
+// Action values are shared by post and comment moderation endpoints.
 export type ModerationActionType = "warn" | "remove" | "escalate" | "dismiss";
 export type ModerationQueueTargetType = "post" | "comment";
 
+// Normalized item shape for the mixed post/comment moderation queue.
 export interface ModerationQueueItem {
   id: number;
   target_type: ModerationQueueTargetType;
