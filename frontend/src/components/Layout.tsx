@@ -204,7 +204,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div className="app-shell">
       <header
         ref={headerRef}
-        className={`topbar${navOverflows ? "topbar--overflow" : ""}`}
+        className={`topbar${navOverflows ? " topbar--overflow" : ""}`}
       >
         <h1 className="brand">
           <Link className="brand-link" to="/posts">
@@ -245,7 +245,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </svg>
           )}
         </button>
-        <nav ref={navRef} className={`nav${menuOpen ? "nav--open" : ""}`}>
+        <nav ref={navRef} className={`nav${menuOpen ? " nav--open" : ""}`}>
           <Link
             className={isFeed ? "active" : ""}
             to="/posts"
