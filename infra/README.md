@@ -38,11 +38,15 @@ terraform init \
   -backend-config="storage_account_name=goodgametfstate<UNIQUE_SUFFIX>"
 ```
 
-## Set secrets (never commit these)
+## Set Terraform Inputs
 
 ```bash
 export TF_VAR_postgres_admin_password="<strong-password>"
 export TF_VAR_django_secret_key="<long-random-string>"
+export TF_VAR_email_host_user="<smtp-username-or-sender>"
+export TF_VAR_email_host_password="<smtp-password-or-app-password>"
+export TF_VAR_frontend_url="https://<static-web-app-hostname>"
+export TF_VAR_github_repo_url="https://github.com/<org-or-user>/<repo>"
 export TF_VAR_github_token="<github-pat-with-repo-scope>"
 ```
 
@@ -50,6 +54,8 @@ Generate a Django secret key:
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(50))"
 ```
+
+Keep secret values in environment variables or an ignored `*.secret.tfvars` file passed with `-var-file=...`. Non-secret values such as `location`, `postgres_location`, `github_repo_url`, `frontend_url`, and `cors_allowed_origins` can live in `terraform.tfvars`. For the first apply, `frontend_url` can be a temporary URL; update it to the Static Web App URL after the frontend deploys.
 
 ## Plan and Apply
 
@@ -63,8 +69,10 @@ terraform apply
 
 ## After First Apply
 
-1. **Retrieve outputs** needed for GitHub Actions secrets:
+1. **Retrieve outputs** needed for deployment and GitHub Actions:
    ```bash
+   terraform output container_app_url
+   terraform output static_web_app_url
    terraform output container_registry_login_server
    terraform output -raw container_registry_admin_username
    terraform output -raw container_registry_admin_password
@@ -79,7 +87,7 @@ terraform apply
    - `ACR_USERNAME` — from `container_registry_admin_username`
    - `ACR_PASSWORD` — from `container_registry_admin_password`
    - `AZURE_STATIC_WEB_APPS_API_TOKEN` — from `static_web_app_api_key`
-   - `DJANGO_SECRET_KEY`, `POSTGRES_PASSWORD`, `AZURE_STORAGE_ACCOUNT_KEY`
+   - `VITE_API_URL` — from `container_app_url`, without a trailing `/api`
 
 3. **Create service principal** for GitHub Actions:
    ```bash
@@ -91,8 +99,7 @@ terraform apply
    ```
    Copy the JSON output and save as `AZURE_CREDENTIALS` secret.
 
-4. **Update CORS** — after the Static Web App deploys, copy its URL, add it
-   to `terraform.tfvars` as `cors_allowed_origins`, then run `terraform apply`.
+4. **Update frontend and CORS URLs** — after the Static Web App deploys, copy its hostname and add the full `https://...` origin to `frontend_url` and `cors_allowed_origins`, then run `terraform apply`.
 
 ## Teardown (end of semester)
 

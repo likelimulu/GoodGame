@@ -319,6 +319,7 @@ _MAX_AVATAR_SIZE = 2 * 1024 * 1024       # 2 MB
 
 
 def _validate_upload(file: UploadedFile, max_size: int, allowed_extensions: set = None):
+    """Validate user uploads before handing them to local/Azure storage."""
     if file.size > max_size:
         msg = f"File size exceeds {max_size // (1024 * 1024)} MB limit"
         logger.warning("Upload rejected — %s (filename: '%s', size: %d)", msg, file.name, file.size)
@@ -385,6 +386,7 @@ _TAG_KEYWORDS: dict[str, set[str]] = {
 
 
 def _score_tag(tag_name: str, words: set[str]) -> int:
+    """Rank an existing tag against draft text without creating new tags."""
     name = tag_name.lower()
     score = 0
     for word in words:
@@ -496,6 +498,11 @@ def _comments_with_related_data():
 
 
 def _annotate_post_stats(queryset):
+    """Attach vote/comment aggregates plus the feed ranking score.
+
+    Weighted score intentionally boosts trusted author posts and trusted-user
+    votes while preserving the raw vote totals for display.
+    """
     vote_totals = PostVote.objects.filter(post_id=OuterRef("pk")).order_by().values("post")
     comment_totals = (
         PostComment.objects.filter(
@@ -580,6 +587,7 @@ def _annotate_post_stats(queryset):
 
 
 def _attach_current_user_vote(posts, user):
+    """Attach the signed-in user's vote to each post without changing public counts."""
     posts = list(posts)
     vote_map = {}
     if user.is_authenticated and posts:
@@ -600,6 +608,7 @@ def _get_post_with_stats(post_id: int, user):
 
 
 def _absolute_file_url(request, field_file):
+    """Return a browser-ready file URL for either local media or Azure blobs."""
     if not field_file:
         return None
 
@@ -610,6 +619,7 @@ def _absolute_file_url(request, field_file):
 
 
 def _attach_comment_file_fields(comments, request):
+    """Hydrate transient attachment fields expected by PostCommentOut."""
     comments = list(comments)
     for comment in comments:
         comment.attachment_name = (
@@ -623,6 +633,7 @@ def _attach_comment_file_fields(comments, request):
 
 
 def _has_moderation_access(user):
+    """Admins and moderators share access to the moderation queue/actions."""
     return user.is_authenticated and user.profile.role in {
         UserProfile.Role.ADMIN,
         UserProfile.Role.MODERATOR,
@@ -630,6 +641,7 @@ def _has_moderation_access(user):
 
 
 def _create_moderation_notification(content, moderator, action_record, note: str):
+    """Notify authors only for moderation actions that directly affect them."""
     is_comment = isinstance(content, PostComment)
     if action_record.action in {
         PostModerationAction.Action.WARN,
@@ -687,6 +699,7 @@ def _create_moderation_notification(content, moderator, action_record, note: str
 
 
 def _annotate_post_moderation_queue(queryset):
+    """Attach latest report/action metadata used by the unified moderation queue."""
     reports = PostModerationReport.objects.filter(post_id=OuterRef("pk"))
     actions = PostModerationAction.objects.filter(post_id=OuterRef("pk")).order_by("-created_at")
     latest_reports = reports.order_by("-created_at")
@@ -727,6 +740,7 @@ def _annotate_post_moderation_queue(queryset):
 
 
 def _annotate_comment_moderation_queue(queryset):
+    """Attach latest report/action metadata for reported comments."""
     reports = CommentModerationReport.objects.filter(comment_id=OuterRef("pk"))
     actions = CommentModerationAction.objects.filter(comment_id=OuterRef("pk")).order_by("-created_at")
     latest_reports = reports.order_by("-created_at")
@@ -785,6 +799,7 @@ def _notifications_for_user(user):
 
 
 def _serialize_post_queue_item(post):
+    """Normalize post reports to the shared moderation queue response shape."""
     return {
         "id": post.id,
         "target_type": "post",
@@ -813,6 +828,7 @@ def _serialize_post_queue_item(post):
 
 
 def _serialize_comment_queue_item(comment, request):
+    """Normalize comment reports to the shared moderation queue response shape."""
     return {
         "id": comment.id,
         "target_type": "comment",
@@ -842,7 +858,7 @@ def _serialize_comment_queue_item(comment, request):
 
 @router.post("/posts", response={201: PostOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut})
 def create_post(request, data: PostIn):
-    """Create a new post in a game hub."""
+    """Create a post; developer posts are restricted to and pinned in assigned hubs."""
     if not request.user.is_authenticated:
         return 401, {"error": "Authentication required"}
 
@@ -872,6 +888,7 @@ def create_post(request, data: PostIn):
 
 
 def _is_trusted_user(user) -> bool:
+    """Trusted users unlock advanced feed controls without adding a new role."""
     if not user.is_authenticated:
         return False
     try:
@@ -881,6 +898,8 @@ def _is_trusted_user(user) -> bool:
 
 
 ADVANCED_SORT_OPTIONS = {
+    # Public feed ordering always keeps pinned posts first. Only trusted users
+    # may select these sort modes; everyone else gets weighted ranking.
     "votes": ["-is_pinned", "-vote_score", "-created_at"],
     "weighted": ["-is_pinned", "-weighted_score", "-created_at"],
     "newest": ["-is_pinned", "-created_at"],
@@ -903,7 +922,9 @@ def list_posts(
     date_to: str = None,
 ):
     """List public posts or the authenticated user's own posts.
-    Trusted users (high reputation) unlock advanced sort/filter parameters.
+
+    Trusted users (high reputation) unlock advanced sort/filter parameters;
+    untrusted requests silently fall back to the default ranked public feed.
     """
     qs = _annotate_post_stats(_posts_with_related_data())
 
@@ -1357,6 +1378,7 @@ def moderate_comment(request, comment_id: int, data: PostModerationActionIn):
 # ── Developer Feedback endpoints ──────────────────────────────
 
 
+# Per-user, per-hub feedback throttle window.
 FEEDBACK_COOLDOWN_SECONDS = 60
 
 
@@ -1386,7 +1408,7 @@ def _parse_iso_date(value: str):
     },
 )
 def submit_feedback(request, game_hub_id: int, data: DeveloperFeedbackIn):
-    """Submit feedback for developers of a game hub."""
+    """Submit feedback to hub developers with ownership and cooldown checks."""
     if not request.user.is_authenticated:
         return 401, {"error": "Authentication required"}
 
@@ -1442,7 +1464,7 @@ def list_developer_feedback(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
 ):
-    """List feedback for the authenticated developer's game hubs."""
+    """List only feedback for hubs assigned to the authenticated developer."""
     if not request.user.is_authenticated:
         return 401, {"error": "Authentication required"}
     if not _is_developer(request.user):

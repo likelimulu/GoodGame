@@ -4,11 +4,15 @@ from django.db.models.signals import m2m_changed
 from django.dispatch import receiver
 from django.contrib.auth.models import User
 
+# Minimum reputation for trusted-user ranking/filter privileges.
 HIGH_REPUTATION_THRESHOLD = 5
 
 
 class UserProfile(models.Model):
+    """App-specific user state layered on top of Django's built-in User."""
+
     class Role(models.TextChoices):
+        # Roles drive both backend endpoint permissions and frontend route guards.
         ADMIN = "admin", "Admin"
         CONTRIBUTOR = "contributor", "Contributor"
         DEVELOPER = "developer", "Developer"
@@ -27,6 +31,8 @@ class UserProfile(models.Model):
 
 
 class EmailVerificationToken(models.Model):
+    """Single-use email verification token with a fixed expiry window."""
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="email_tokens")
     token = models.CharField(max_length=64, unique=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -41,6 +47,8 @@ class EmailVerificationToken(models.Model):
 
 
 class ModeratorAccessRequest(models.Model):
+    """Contributor request reviewed by admins before granting moderator access."""
+
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         APPROVED = "approved", "Approved"
@@ -80,6 +88,8 @@ class GameHub(models.Model):
     """A dedicated discussion area for a specific game."""
     name = models.CharField(max_length=120, unique=True)
     slug = models.SlugField(max_length=120, unique=True)
+    # Developers can post/pin only in assigned hubs. The signal below enforces
+    # that a developer user is assigned to at most one hub.
     developers = models.ManyToManyField(
         User,
         blank=True,
@@ -120,7 +130,11 @@ class Tag(models.Model):
 
 
 class Post(models.Model):
-    """A structured discussion post within a game hub."""
+    """A structured discussion post within a game hub.
+
+    Posts are soft-deleted by moving to DELETED so moderation history,
+    notifications, and reputation calculations keep stable references.
+    """
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
@@ -156,6 +170,8 @@ class Post(models.Model):
 
 
 class PostVote(models.Model):
+    """One vote per user/post; vote changes recalculate author reputation."""
+
     class Value(models.IntegerChoices):
         DOWNVOTE = -1, "Downvote"
         UPVOTE = 1, "Upvote"
@@ -183,6 +199,8 @@ class PostVote(models.Model):
 
 
 class PostComment(models.Model):
+    """Flat post comment with optional attachment; there is no nesting/threading."""
+
     class Status(models.TextChoices):
         PUBLISHED = "published", "Published"
         DELETED = "deleted", "Deleted"
@@ -210,6 +228,12 @@ class PostComment(models.Model):
 
 
 class PostModerationReport(models.Model):
+    """User-submitted report against a post.
+
+    OPEN and ESCALATED are active queue states. ACTIONED and DISMISSED are
+    terminal review outcomes.
+    """
+
     class Status(models.TextChoices):
         OPEN = "open", "Open"
         ACTIONED = "actioned", "Actioned"
@@ -251,6 +275,8 @@ class PostModerationReport(models.Model):
 
 
 class CommentModerationReport(models.Model):
+    """User-submitted report against a comment; status semantics match posts."""
+
     class Status(models.TextChoices):
         OPEN = "open", "Open"
         ACTIONED = "actioned", "Actioned"
@@ -293,6 +319,7 @@ class CommentModerationReport(models.Model):
 
 class DeveloperFeedback(models.Model):
     """Feedback submitted by a user targeting developers of a game hub."""
+
     MAX_MESSAGE_LENGTH = 2000
 
     game_hub = models.ForeignKey(GameHub, on_delete=models.CASCADE, related_name="feedback")
@@ -318,7 +345,10 @@ class DeveloperFeedback(models.Model):
 
 
 class PostModerationAction(models.Model):
+    """Moderator/admin decision recorded for a reported post."""
+
     class Action(models.TextChoices):
+        # warn/remove notify the author; escalate/dismiss only update report state.
         WARN = "warn", "Warn"
         REMOVE = "remove", "Remove"
         ESCALATE = "escalate", "Escalate"
@@ -349,7 +379,10 @@ class PostModerationAction(models.Model):
 
 
 class CommentModerationAction(models.Model):
+    """Moderator/admin decision recorded for a reported comment."""
+
     class Action(models.TextChoices):
+        # Keep these values in sync with PostModerationAction and frontend types.
         WARN = "warn", "Warn"
         REMOVE = "remove", "Remove"
         ESCALATE = "escalate", "Escalate"
@@ -380,6 +413,8 @@ class CommentModerationAction(models.Model):
 
 
 class Notification(models.Model):
+    """In-app moderation notification for affected content authors."""
+
     class Type(models.TextChoices):
         MODERATION_WARNING = "moderation_warning", "Moderation Warning"
         POST_REMOVED = "post_removed", "Post Removed"
@@ -412,6 +447,8 @@ class Notification(models.Model):
         blank=True,
         related_name="notifications",
     )
+    # One-to-one action links make notification creation idempotent when a
+    # moderation action is retried by the API or tests.
     moderation_action = models.OneToOneField(
         PostModerationAction,
         on_delete=models.SET_NULL,

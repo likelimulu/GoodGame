@@ -5,14 +5,17 @@
 | File                       | Description                                                                                                                                                  |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `Dockerfile.django.dev`    | Django dev image — Python 3.14 slim, installs `uv`, `ty`, `ruff`, `git`, `gh`; serves on port 8000                                                           |
+| `Dockerfile.django.prod`   | Django production image — Python 3.12 slim, runs `gunicorn`; built by CI and deployed to Azure Container Apps                                                |
 | `Dockerfile.react.dev`     | React dev image — Node.js 25.8 Alpine, installs `git`, `curl`, `gh`; runs `npm install` at build time; serves on port 5173                                   |
-| `../docker-compose.yml`    | Orchestrates both containers on `goodgame-network`; `frontend` waits for `api` health check                                                                  |
+| `entrypoint.sh`            | Production entrypoint — runs `migrate`, `seed_test_users`, `seed_tags`, then launches `gunicorn`                                                             |
+| `../docker-compose.yml`    | Orchestrates `db` (Postgres 16), `api`, and `frontend` on `goodgame-network`; `frontend` waits for `api` health check, `api` waits for `db` health check     |
 | `../.devcontainer/django/` | VS Code Dev Container for backend — attaches to `api`, installs Python/Ruff/Ty/Docker/Claude extensions, auto-runs migrations via `postCreateCommand`        |
 | `../.devcontainer/react/`  | VS Code Dev Container for frontend — attaches to `frontend`, installs ESLint/Prettier/Claude extensions, runs `npm run dev -- --host` via `postStartCommand` |
 
 ## Prerequisites
 
 - Docker + Docker Compose
+- A `backend/.env` file (the `api` service mounts it as `env_file`). Copy `backend/.env.example`; for Compose keep `POSTGRES_HOST=db`.
 - (Optional) VS Code with Dev Containers extension
 
 ## Quick Start
@@ -25,22 +28,23 @@ docker-compose up --build
 # Django Admin: http://localhost:8000/admin
 ```
 
-The frontend waits for the Django API health check before starting.
+Startup order: `db` → `api` (runs `migrate` + `seed_hubs` + `seed_test_users` + `seed_tags`) → `frontend` (waits for the API health check).
 
 ## First Time Setup
 
+`docker-compose up --build` already runs `migrate` and the seed commands automatically — there is nothing extra to do. The seeded role accounts all use password `TestPass123!`; examples include `test_contributor_1`, `test_moderator_1`, `test_developer_nintendo`, and `test_admin_1`.
+
+To create a separate Django admin login:
+
 ```bash
-# 1. Build and start
-docker-compose up --build
-
-# 2. Run migrations
-docker-compose exec api python manage.py migrate
-
-# 3. Create a superuser (optional)
 docker-compose exec api python manage.py createsuperuser
 ```
 
 > When using VS Code Dev Containers, the Django `postCreateCommand` runs migrations automatically.
+
+## Production Image Note
+
+`Dockerfile.django.prod` runs `/entrypoint.sh`, which currently seeds `test_*` users before Gunicorn starts. That matches the current file, but remove `python manage.py seed_test_users` from `docker/entrypoint.sh` before treating the deployment as real production.
 
 ## VS Code Dev Containers
 
@@ -60,6 +64,9 @@ docker-compose exec api python manage.py makemigrations
 docker-compose exec api python manage.py migrate
 docker-compose exec api python manage.py shell
 docker-compose exec api python manage.py test
+docker-compose exec api python manage.py seed_hubs
+docker-compose exec api python manage.py seed_tags
+docker-compose exec api python manage.py seed_test_users
 
 docker-compose exec api ty check .
 docker-compose exec api ruff check .
@@ -94,7 +101,7 @@ Both services support hot reload - no container restart needed for code changes.
 
 ## Database
 
-SQLite (`db.sqlite3`) is used for development and persisted on the host, so data survives container restarts.
+PostgreSQL 16 runs as the `db` service. Data is persisted in the `postgres_data` named volume, so it survives container restarts. Default credentials (from `docker-compose.yml`): database `goodgame`, user `goodgameadmin`, password `localpass123`. The DB is reachable from other containers as host `db:5432` on the `goodgame-network`; it is **not** published to the host by default.
 
 ## Tools
 
@@ -118,13 +125,11 @@ lsof -ti:5173 | xargs kill -9
 docker-compose logs -f api
 ```
 
-**Reset database:**
+**Reset database:** drop the `postgres_data` volume. The `api` container will re-run migrations and seeds on next start.
 
 ```bash
-docker-compose down
-rm db.sqlite3
-docker-compose up -d
-docker-compose exec api python manage.py migrate
+docker-compose down -v
+docker-compose up --build
 ```
 
 **Rebuild from scratch:**

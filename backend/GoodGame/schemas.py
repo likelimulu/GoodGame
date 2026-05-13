@@ -4,6 +4,9 @@ from typing import List, Literal, Optional
 from ninja import Schema
 from pydantic import EmailStr, Field
 
+# These Ninja schemas are the API contract. Keep frontend/src/api/types.ts in
+# sync when adding, removing, or renaming response fields.
+
 
 # ── Auth schemas ──────────────────────────────────────────────
 
@@ -26,6 +29,8 @@ class LoginIn(Schema):
 
 
 class AuthUserOut(Schema):
+    """Current-user payload used by both auth state and route guards."""
+
     id: int
     username: str
     email: str
@@ -94,6 +99,8 @@ class TagOut(Schema):
 
 
 class PostIn(Schema):
+    """Create-post payload; view code clamps tags to five normalized records."""
+
     game_hub_id: int
     title: str = Field(..., min_length=1, max_length=300)
     body: str = Field(..., min_length=1, max_length=50000)
@@ -157,6 +164,8 @@ class PostCommentOut(Schema):
 
 
 class PostOut(Schema):
+    """Post response including model fields plus derived feed/vote aggregates."""
+
     id: int
     game_hub: GameHubOut
     author: PostAuthorOut
@@ -210,6 +219,8 @@ class SearchUserOut(Schema):
 
 
 class SearchOut(Schema):
+    """Grouped search response; comments are intentionally excluded from search."""
+
     posts: List[PostOut]
     game_hubs: List[GameHubOut]
     tags: List[TagOut]
@@ -217,6 +228,8 @@ class SearchOut(Schema):
 
 
 class PostVoteIn(Schema):
+    """Vote value: -1 downvote, 1 upvote, 0 clears the current user's vote."""
+
     value: Literal[-1, 0, 1]
 
 
@@ -264,11 +277,15 @@ class CommentModerationReportOut(Schema):
 
 
 class PostModerationActionIn(Schema):
+    """Action payload shared by post and comment moderation endpoints."""
+
     action: Literal["warn", "remove", "escalate", "dismiss"]
     note: str = Field("", max_length=1000)
 
 
 class ModerationQueueItemOut(Schema):
+    """Unified queue item for reported posts and comments."""
+
     id: int
     target_type: Literal["post", "comment"]
     game_hub: GameHubOut
@@ -336,6 +353,8 @@ class AvatarOut(Schema):
 
 
 class UserRoleIn(Schema):
+    """Admin-only role update payload."""
+
     role: Literal["admin", "contributor", "developer", "moderator"]
 
 
@@ -350,6 +369,8 @@ class ModeratorRequestCreateIn(Schema):
 
 
 class ModeratorRequestReviewIn(Schema):
+    """Admin decision for a pending moderator access request."""
+
     status: Literal["approved", "rejected"]
     review_note: str = Field("", max_length=1000)
 
@@ -384,6 +405,8 @@ class ModeratorRequestOut(Schema):
 
 
 class DeveloperFeedbackIn(Schema):
+    """Player feedback body; model/view enforce final length and cooldown rules."""
+
     message: str = Field(...)
 
 
