@@ -9,7 +9,7 @@ TEST_PASSWORD = "TestPass123!"
 TEST_USERS = [
     {"username": "test_contributor_1", "role": UserProfile.Role.CONTRIBUTOR},
     {"username": "test_contributor_2", "role": UserProfile.Role.CONTRIBUTOR},
-    {"username": "test_contributor_3", "role": UserProfile.Role.CONTRIBUTOR},
+    {"username": "test_contributor_3", "role": UserProfile.Role.CONTRIBUTOR, "reputation_score": 10},
     {"username": "test_developer_nintendo", "role": UserProfile.Role.DEVELOPER, "hub": "Nintendo"},
     {"username": "test_developer_bethesda", "role": UserProfile.Role.DEVELOPER, "hub": "Bethesda"},
     {"username": "test_developer_sony", "role": UserProfile.Role.DEVELOPER, "hub": "Sony"},
@@ -47,6 +47,10 @@ class Command(BaseCommand):
                 changed = True
             if not profile.email_verified:
                 profile.email_verified = True
+                changed = True
+            rep = entry.get("reputation_score")
+            if rep is not None and profile.reputation_score != rep:
+                profile.reputation_score = rep
                 changed = True
             if changed:
                 profile.save()
